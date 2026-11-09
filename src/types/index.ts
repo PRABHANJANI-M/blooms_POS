@@ -44,6 +44,7 @@ export interface BillLine {
   unit: string;
   mrp: number;
   rate: number;
+  salesRate?: number;
   qty: number;
   discPct: number;
   gstRate: number;

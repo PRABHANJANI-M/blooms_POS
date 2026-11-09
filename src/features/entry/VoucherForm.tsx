@@ -66,7 +66,7 @@ const nextNumberFor = (kind: string): number => {
 };
 
 const freshHeader = (cfg: VoucherKindConfig, no: number): Header => ({
-  series: cfg.kind === 'sales' ? 'SALES' : cfg.kind === 'quotation' ? 'QUOTATION' : cfg.kind === 'sales-order' ? 'Sales Order' : cfg.kind === 'delivery-challan' ? 'Delivery Challan' : 'Default', no, date: todayISO(), type: 'Cash',
+  series: cfg.kind === 'sales' ? 'SALES' : cfg.kind === 'quotation' ? 'QUOTATION' : cfg.kind === 'sales-order' ? 'Sales Order' : cfg.kind === 'purchase-order' ? 'Purchase Order' : cfg.kind === 'delivery-challan' ? 'Delivery Challan' : 'Default', no, date: todayISO(), type: 'Cash',
   partyName: '', state: COMPANY_STATE, gstin: '', address1: '', address2: '', address3: '', cell: '',
   through: '', priceMode: cfg.priceMode, validDays: 30, narration: '',
   creditDays: 0, cashDiscountDays: 0, cashDiscountPct: 0,
@@ -114,8 +114,10 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
   const isSalesReturn = cfg.kind === 'sales-return';
   const isQuotation = cfg.kind === 'quotation';
   const isSalesOrder = cfg.kind === 'sales-order';
+  const isPurchaseOrder = cfg.kind === 'purchase-order';
   const isDeliveryChallan = cfg.kind === 'delivery-challan';
   const isPurchaseBill = cfg.kind === 'purchase-bill';
+  const isPurchaseGrid = isPurchaseBill || isPurchaseOrder;
   const isOrderLayout = isSalesOrder || isQuotation || isSalesReturn || isDeliveryChallan;
   const interState = header.state !== COMPANY_STATE;
   const sundryPct = cfg.showSundry
@@ -142,6 +144,14 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
   const billNo = `${prefix}-${header.no}`;
   const previousBill = cfg.kind === 'sales'
     ? recentSalesBills.filter((bill) => bill.no < header.no).sort((a, b) => b.no - a.no)[0]
+    : isPurchaseBill
+      ? [...(voucherHistory['purchase-bill'] ?? []), ...savedRows]
+        .filter((bill) => Number(bill.no.replace(/\D/g, '')) < header.no)
+        .sort((a, b) => Number(b.no.replace(/\D/g, '')) - Number(a.no.replace(/\D/g, '')))[0]
+    : isPurchaseOrder
+      ? [...(voucherHistory['purchase-order'] ?? []), ...savedRows]
+        .filter((order) => Number(order.no.replace(/\D/g, '')) < header.no)
+        .sort((a, b) => Number(b.no.replace(/\D/g, '')) - Number(a.no.replace(/\D/g, '')))[0]
     : isSalesOrder
       ? [...(voucherHistory['sales-order'] ?? []), ...savedRows]
         .filter((order) => Number(order.no.replace(/\D/g, '')) < header.no)
@@ -233,7 +243,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
           return [line.itemId!, {
             purchaseRate: line.rate,
             mrp: line.mrp,
-            rate: currentItem?.rate ?? line.rate,
+            rate: line.salesRate ?? currentItem?.rate ?? line.rate,
           }];
         }),
       );
@@ -241,20 +251,23 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
     }
     addVoucher(cfg.kind, {
       id: `${cfg.kind}-${Date.now()}`, no: billNo, date: header.date, party: partyName,
-      amount: cfg.stockOnly ? 0 : totals.netAmount, status: isSalesOrder ? 'Pending' : header.type === 'Credit' ? 'Credit' : 'Saved (demo)',
-      ...(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan || isPurchaseBill ? { lines: lines.filter((line) => line.name) } : {}),
-      ...(isPurchaseBill ? {
+      amount: cfg.stockOnly ? 0 : totals.netAmount, status: isSalesOrder || isPurchaseOrder ? 'Pending' : header.type === 'Credit' ? 'Credit' : 'Saved (demo)',
+      ...(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isPurchaseOrder || isDeliveryChallan || isPurchaseBill ? { lines: lines.filter((line) => line.name) } : {}),
+        ...(isPurchaseBill ? {
         extra: [
           supplierInvoiceNo.trim() && `Supplier invoice: ${supplierInvoiceNo.trim()}`,
           `Supplier invoice date: ${supplierInvoiceDate}`,
           header.through && `Through: ${header.through}`,
+          header.creditDays > 0 && `Credit days: ${header.creditDays}`,
+          header.cashDiscountDays > 0 && `CD days: ${header.cashDiscountDays}`,
+          header.cashDiscountPct > 0 && `CD: ${header.cashDiscountPct}%`,
           updateItemMasterPrices && 'Item master rates updated for this session',
         ].filter(Boolean).join(' · '),
       } : {}),
-      ...(isSalesOrder || isDeliveryChallan ? {
+      ...(isSalesOrder || isPurchaseOrder || isDeliveryChallan ? {
         extra: [
           header.through && `Through: ${header.through}`,
-          isSalesOrder && `Valid days: ${header.validDays}`,
+          (isSalesOrder || isPurchaseOrder) && `Valid days: ${header.validDays}`,
           header.creditDays > 0 && `Credit days: ${header.creditDays}`,
           header.cashDiscountDays > 0 && `CD days: ${header.cashDiscountDays}`,
           header.cashDiscountPct > 0 && `CD: ${header.cashDiscountPct}%`,
@@ -379,9 +392,47 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
       'auto-order': 'Auto order would reorder items below reorder level. Demo only, nothing was ordered.',
       extend: 'Validity extended by 30 days (demo, not stored).',
     };
-    if (a === 'extend' && isSalesOrder) {
+    if (a === 'extend' && (isSalesOrder || isPurchaseOrder)) {
       setH('validDays', header.validDays + 30);
       toast({ tone: 'success', title: 'Order validity extended', message: `Validity is now ${header.validDays + 30} days.` });
+      return;
+    }
+    if (a === 'auto-order' && isPurchaseOrder) {
+      const suggestions = catalogItems
+        .filter((item) => item.reorderLevel > 0 && item.stock <= item.reorderLevel)
+        .map((item) => computeLine({
+          ...blankLines(1)[0],
+          uid: newLineId(),
+          itemId: item.id,
+          code: item.code,
+          name: item.name,
+          unit: item.unit,
+          mrp: item.mrp,
+          rate: item.purchaseRate ?? item.rate,
+          salesRate: item.rate,
+          gstRate: item.gstRate,
+          qty: Math.max(item.reorderLevel - item.stock, 1),
+          detail: item.brand,
+          batchNo: `B${item.code.slice(-3)}`,
+        }));
+      const currentLines = lines.filter((line) => line.name);
+      const newSuggestions = suggestions.filter((suggestion) => !currentLines.some((line) => line.itemId === suggestion.itemId));
+      if (!newSuggestions.length) {
+        const allAlreadyAdded = suggestions.length > 0;
+        toast({
+          tone: 'info',
+          title: allAlreadyAdded ? 'Reorder items already added' : 'No items to reorder',
+          message: allAlreadyAdded ? 'Review or adjust the existing item quantities on this order.' : 'No items are at or below their reorder level.',
+        });
+        return;
+      }
+      setLines([...currentLines, ...newSuggestions, blankLines(1)[0]]);
+      toast({ tone: 'success', title: `${newSuggestions.length} reorder item(s) added`, message: 'Review the quantities and supplier before saving the purchase order.' });
+      return;
+    }
+    if (a === 'from-orders' && isPurchaseOrder) {
+      navigate('/entry/sales-order/pending');
+      toast({ tone: 'info', title: 'Sales orders opened', message: 'Review pending sales orders before preparing a purchase order.' });
       return;
     }
     if (a === 'purchase') {
@@ -397,7 +448,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
     if (!matches.length) return toast({ tone: 'warning', title: 'No matching items', message: 'The CSV needs "item code, quantity" per line.' });
     const found: BillLine[] = matches.map(({ item, qty }) => computeLine({
       ...blankLines(1)[0], uid: newLineId(), name: item.name, code: item.code, unit: item.unit, mrp: item.mrp,
-      rate: isPurchaseBill ? item.purchaseRate ?? item.rate : cfg.priceMode === 'mrp' ? item.mrp : item.rate,
+      rate: isPurchaseGrid ? item.purchaseRate ?? item.rate : cfg.priceMode === 'mrp' ? item.mrp : item.rate,
       gstRate: item.gstRate, qty, detail: item.brand,
     }));
     setLines((prev) => [...prev.filter((l) => l.name), ...found, blankLines(1)[0]]);
@@ -409,7 +460,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
     F7: () => setH('priceMode', header.priceMode === 'rate' ? 'mrp' : header.priceMode === 'mrp' ? 'wholesale' : 'rate'),
     F8: () => resetForm(true),
     'Alt+S': save,
-    ...(isSalesOrder || isDeliveryChallan ? {
+    ...(isSalesOrder || isPurchaseOrder || isDeliveryChallan || isPurchaseBill ? {
       PageUp: () => setH('no', Math.max(1, header.no - 1)),
       PageDown: () => setH('no', header.no + 1),
       Escape: () => navigate('/'),
@@ -418,10 +469,12 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
 
   const shortcuts = isQuotation
     ? 'PgUp / PgDn = previous / next quotation · F2 = new · Alt+S = save · Ctrl+Del = remove row · Esc = close'
-    : isSalesOrder || isDeliveryChallan
-    ? `PgUp / PgDn = previous / next ${isSalesOrder ? 'order' : 'challan'} · F2 = new · Alt+S = save · Ctrl+Del = remove row · Esc = close`
+    : isSalesOrder || isPurchaseOrder || isDeliveryChallan
+    ? `PgUp / PgDn = previous / next ${isPurchaseOrder ? 'purchase order' : isSalesOrder ? 'order' : 'challan'} · F2 = new · Alt+S = save · Ctrl+Del = remove row · Esc = close`
     : isSalesReturn
     ? 'Enter = next · Space = item list · F2 = new · F7 = price list · Alt+S = save · Ctrl+Del = remove row'
+    : isPurchaseBill
+    ? 'PgUp / PgDn = previous / next purchase · F2 = new · Alt+S = save · Ctrl+Del = remove row · Esc = close'
     : 'Enter = next · Space = item list · F2 / F8 = new · F7 = price list · Alt+S = save · Ctrl+Del = remove row · Esc = dashboard';
   const numberNav = (delta: number) => setH('no', Math.max(1, header.no + delta));
   const requiresParty = Boolean(cfg.partyLabel);
@@ -435,13 +488,13 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
         actions={
           <div className="flex items-center gap-2">
             {!isSalesReturn && !isQuotation && !isDeliveryChallan && <span className="badge badge-steel">New {billNo}</span>}
-            <Button size="sm" variant="outline" className="border-white/30 bg-white/10 text-white hover:bg-white/20" icon={<FilePlus className="h-3.5 w-3.5" />} onClick={() => resetForm(true)}>{isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan ? 'F2' : 'F8'}</Button>
+            <Button size="sm" variant="outline" className="border-white/30 bg-white/10 text-white hover:bg-white/20" icon={<FilePlus className="h-3.5 w-3.5" />} onClick={() => resetForm(true)}>{isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder ? 'F2' : 'F8'}</Button>
           </div>
         }
       />
 
-      <div className={cn('mt-3 space-y-3', cfg.kind === 'sales' && 'sales-create-form', isQuotation && 'quotation-create-form', isSalesOrder && 'sales-order-create-form', isDeliveryChallan && 'delivery-challan-create-form', isPurchaseBill && 'purchase-bill-create-form')}>
-        <DemoNotice>{isSalesReturn ? 'Sales Return entries, linked bills, and item details stay in this browser session only. No stock or accounts are changed.' : isQuotation ? 'Quotations stay in this browser session. Making a bill saves the quotation and opens a Sales Bill with its customer and items.' : isSalesOrder ? 'Sales orders and item details stay in this browser session. Saving does not reserve stock or post to accounts.' : isDeliveryChallan ? 'Delivery challans and item details stay in this browser session. Saving does not update stock or post to accounts.' : isPurchaseBill ? 'Purchase bills and item-master price updates stay in this browser session. No inventory or accounts are posted.' : 'Saving keeps this bill in the session only. Nothing is posted to accounts or sent to a customer.'}</DemoNotice>
+      <div className={cn('entry-create-form mt-3 space-y-3', cfg.kind === 'sales' && 'sales-create-form', isQuotation && 'quotation-create-form', isSalesOrder && 'sales-order-create-form', isDeliveryChallan && 'delivery-challan-create-form', isPurchaseBill && 'purchase-bill-create-form', isPurchaseOrder && 'purchase-order-create-form')}>
+      <DemoNotice>{isSalesReturn ? 'Sales Return entries, linked bills, and item details stay in this browser session only. No stock or accounts are changed.' : isQuotation ? 'Quotations stay in this browser session. Making a bill saves the quotation and opens a Sales Bill with its customer and items.' : isSalesOrder ? 'Sales orders and item details stay in this browser session. Saving does not reserve stock or post to accounts.' : isPurchaseOrder ? 'Purchase orders and item details stay in this browser session. Saving does not reserve stock or post to accounts.' : isDeliveryChallan ? 'Delivery challans and item details stay in this browser session. Saving does not update stock or post to accounts.' : isPurchaseBill ? 'Purchase bills and item-master price updates stay in this browser session. No inventory or accounts are posted.' : 'Saving keeps this bill in the session only. Nothing is posted to accounts or sent to a customer.'}</DemoNotice>
 
         {errors.length > 0 && (
           <div role="alert" className="rounded-lg border border-fiery/40 bg-red-50 p-3 text-sm text-fiery">
@@ -450,19 +503,20 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
           </div>
         )}
 
-        <Panel className={cn(cfg.kind === 'sales' && 'sales-header-panel border-steel-200', (isSalesOrder || isDeliveryChallan || isPurchaseBill) && 'sales-header-panel', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'border-blue-200 bg-blue-50/40')} bodyClassName="p-3 sm:p-4">
-          <div className={cn('grid gap-3 md:grid-cols-2 xl:grid-cols-4', cfg.kind === 'sales' && 'xl:grid-cols-12', (isOrderLayout || isPurchaseBill) && 'lg:grid-cols-12 xl:grid-cols-12 lg:gap-x-4 lg:gap-y-2')}>
-            <Field label="Series" htmlFor="series" className={cn(cfg.kind === 'sales' && 'xl:col-span-2', (isSalesReturn || isQuotation || isSalesOrder) && 'lg:col-span-3 lg:col-start-1 lg:row-start-1', isPurchaseBill && 'lg:col-span-3 lg:col-start-1 lg:row-start-1')}>
+        <Panel className={cn('entry-header-panel', cfg.kind === 'sales' && 'sales-header-panel border-steel-200', (isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder) && 'sales-header-panel', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan || isPurchaseOrder) && 'border-blue-200 bg-blue-50/40')} bodyClassName="p-3 sm:p-4">
+          <div className={cn('grid gap-3 md:grid-cols-2 xl:grid-cols-4', cfg.kind === 'sales' && 'xl:grid-cols-12', (isOrderLayout || isPurchaseBill || isPurchaseOrder) && 'lg:grid-cols-12 xl:grid-cols-12 lg:gap-x-4 lg:gap-y-2')}>
+            <Field label="Series" htmlFor="series" className={cn(cfg.kind === 'sales' && 'xl:col-span-2', (isSalesReturn || isQuotation || isSalesOrder) && 'lg:col-span-3 lg:col-start-1 lg:row-start-1', isPurchaseBill && 'lg:col-span-4 lg:col-start-1 lg:row-start-1', isPurchaseOrder && 'lg:col-span-3 lg:col-start-1 lg:row-start-1')}>
               <SelectInput id="series" compact value={header.series} onChange={(e) => setH('series', e.target.value)}>
                 {cfg.kind === 'sales' && <option>SALES</option>}
                 {isQuotation && <option>QUOTATION</option>}
                 {isSalesOrder && <option>Sales Order</option>}
                 {isDeliveryChallan && <option>Delivery Challan</option>}
                 {isPurchaseBill && <option>Purchase</option>}
+                {isPurchaseOrder && <option>Purchase Order</option>}
                 <option>Default</option><option>Main series</option><option>Online</option>
               </SelectInput>
             </Field>
-            <Field label={isQuotation ? 'Quote No' : isSalesOrder ? 'Order No' : isDeliveryChallan ? 'DC No' : `${cfg.title} No`} className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-3 lg:col-start-1 lg:row-start-2', isPurchaseBill && 'lg:col-span-3 lg:col-start-4 lg:row-start-1')}>
+            <Field label={isQuotation ? 'Quote No' : isSalesOrder || isPurchaseOrder ? 'Order No' : isDeliveryChallan ? 'DC No' : `${cfg.title} No`} className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-3 lg:col-start-1 lg:row-start-2', isPurchaseBill && 'lg:col-span-4 lg:col-start-1 lg:row-start-2', isPurchaseOrder && 'lg:col-span-3 lg:col-start-1 lg:row-start-2')}>
               <div className="flex items-center gap-1">
                 <button type="button" className="btn btn-outline btn-sm btn-icon" onClick={() => numberNav(-1)} aria-label="Previous number">‹</button>
                 <TextInput compact numeric type="number" min={1} value={header.no} onChange={(e) => setH('no', Math.max(1, Math.floor(parseNum(e.target.value))))} aria-label="Voucher number" />
@@ -470,26 +524,16 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                 <span className="whitespace-nowrap text-xs text-slate-500">FY {financialYearLabel(header.date)}</span>
               </div>
             </Field>
-            <Field label="Date" htmlFor="date" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation) && 'lg:col-span-3 lg:col-start-1 lg:row-start-3', isSalesOrder && 'lg:col-span-3 lg:col-start-1 lg:row-start-3', isPurchaseBill && 'lg:col-span-3 lg:col-start-7 lg:row-start-1')}>
+            <Field label="Date" htmlFor="date" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation) && 'lg:col-span-3 lg:col-start-1 lg:row-start-3', (isSalesOrder || isPurchaseOrder) && 'lg:col-span-3 lg:col-start-1 lg:row-start-3', isPurchaseBill && 'lg:col-span-4 lg:col-start-1 lg:row-start-3')}>
               <TextInput id="date" type="date" compact value={header.date} onChange={(e) => setH('date', e.target.value)} />
               {!isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan && !isPurchaseBill && <p className="hint-text">{toDisplayDate(header.date)}</p>}
             </Field>
-            {isPurchaseBill && (
-              <>
-                <Field label="Supplier Invoice No." htmlFor="supplier-invoice-no" className="lg:col-span-3 lg:col-start-1 lg:row-start-2">
-                  <TextInput id="supplier-invoice-no" compact value={supplierInvoiceNo} placeholder="Supplier invoice number" onChange={(e) => setSupplierInvoiceNo(e.target.value)} />
-                </Field>
-                <Field label="Supplier Invoice Date" htmlFor="supplier-invoice-date" className="lg:col-span-3 lg:col-start-4 lg:row-start-2">
-                  <TextInput id="supplier-invoice-date" compact type="date" value={supplierInvoiceDate} onChange={(e) => setSupplierInvoiceDate(e.target.value)} />
-                </Field>
-              </>
-            )}
             {isSalesOrder && (
               <Field label="Valid days" hint={`Till ${toDisplayDate(addDays(header.date, header.validDays))}`} className="lg:col-span-3 lg:col-start-1 lg:row-start-4">
                 <TextInput compact type="number" min={1} numeric value={header.validDays} onChange={(e) => setH('validDays', Math.max(1, parseNum(e.target.value)))} />
               </Field>
             )}
-            <Field label="Type" className={cn(cfg.kind === 'sales' && 'xl:col-span-4', (isSalesReturn || isQuotation || isDeliveryChallan) && 'lg:col-span-3 lg:col-start-1 lg:row-start-4', isPurchaseBill && 'lg:col-span-3 lg:col-start-10 lg:row-start-1', isSalesOrder && 'lg:col-span-3 lg:col-start-1 lg:row-start-5')}>
+            <Field label="Type" className={cn(cfg.kind === 'sales' && 'xl:col-span-4', (isSalesReturn || isQuotation || isDeliveryChallan) && 'lg:col-span-3 lg:col-start-1 lg:row-start-4', isPurchaseBill && 'lg:col-span-4 lg:col-start-1 lg:row-start-4', (isSalesOrder || isPurchaseOrder) && 'lg:col-span-3 lg:col-start-1 lg:row-start-5')}>
               <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-cream-200" role="group" aria-label="Payment type">
                 {(['Cash', 'Credit'] as const).map((t) => (
                   <button
@@ -507,23 +551,26 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
             </Field>
 
             {cfg.partyLabel && (
-              <Field label={isOrderLayout ? 'Name' : isPurchaseBill ? 'Supplier' : `${cfg.partyLabel} name`} className={cn('md:col-span-2', cfg.kind === 'sales' && 'xl:col-span-6', (isSalesReturn || isQuotation || isSalesOrder) && 'lg:col-span-4 lg:col-start-9 lg:row-start-1', isPurchaseBill && 'lg:col-span-6 lg:col-start-7 lg:row-start-2')} error={requiresParty && header.type === 'Credit' && !header.partyName ? 'Required for credit' : undefined} hint={isSalesOrder && header.type === 'Cash' && !header.partyName ? 'Cash customer' : undefined} htmlFor="party">
-                <TextInput id="party" compact={cfg.kind === 'sales' || isOrderLayout || isPurchaseBill} list={`party-${cfg.kind}`} value={header.partyName} placeholder={isPurchaseBill ? 'Search supplier name' : isOrderLayout ? 'Cash customer name, or search party (credit)' : `Search ${cfg.partyLabel.toLowerCase()} name`} onChange={(e) => pickParty(e.target.value)} />
+              <Field label={isOrderLayout || isPurchaseOrder ? 'Name' : isPurchaseBill ? 'Name' : `${cfg.partyLabel} name`} className={cn('md:col-span-2', cfg.kind === 'sales' && 'xl:col-span-6', (isSalesReturn || isQuotation || isSalesOrder) && 'lg:col-span-4 lg:col-start-9 lg:row-start-1', isPurchaseBill && 'lg:col-span-4 lg:col-start-9 lg:row-start-1', isPurchaseOrder && 'lg:col-span-4 lg:col-start-9 lg:row-start-1')} error={requiresParty && header.type === 'Credit' && !header.partyName ? 'Required for credit' : undefined} hint={isSalesOrder && header.type === 'Cash' && !header.partyName ? 'Cash customer' : undefined} htmlFor="party">
+                <TextInput id="party" compact={cfg.kind === 'sales' || isOrderLayout || isPurchaseBill || isPurchaseOrder} list={`party-${cfg.kind}`} value={header.partyName} placeholder={isPurchaseBill || isPurchaseOrder ? 'SEARCH SUPPLIER (SUNDRY CREDITORS)' : isOrderLayout ? 'Cash customer name, or search party (credit)' : `Search ${cfg.partyLabel.toLowerCase()} name`} onChange={(e) => pickParty(e.target.value)} />
                 <datalist id={`party-${cfg.kind}`}>
                   {(parties ?? []).map((p: Party) => <option key={p.id} value={p.name}>{p.city}</option>)}
                 </datalist>
               </Field>
             )}
             {cfg.partyLabel && (
-              <Field label="State" htmlFor="state" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-1', isPurchaseBill && 'lg:col-span-3 lg:col-start-1 lg:row-start-3')}>
-                <SelectInput id="state" compact value={header.state} onChange={(e) => setH('state', e.target.value)}>
-                  {stateList.map((s) => <option key={s}>{s}</option>)}
-                </SelectInput>
+              <Field label="State" htmlFor="state" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-1', isPurchaseBill && 'lg:col-span-4 lg:col-start-5 lg:row-start-1', isPurchaseOrder && 'lg:col-span-5 lg:col-start-4 lg:row-start-1')}>
+                <div className="flex items-center gap-2">
+                  <SelectInput id="state" compact value={header.state} onChange={(e) => setH('state', e.target.value)}>
+                    {stateList.map((s) => <option key={s}>{s}</option>)}
+                  </SelectInput>
+                  {(isPurchaseBill || isPurchaseOrder) && <span className="whitespace-nowrap rounded bg-[#dff2e7] px-2 py-1 text-[10px] font-bold text-[#267146]">L/MultiTax&nbsp; CGST + SGST</span>}
+                </div>
               </Field>
             )}
             {cfg.partyLabel && (
-              <Field label="GSTIN (B2B)" htmlFor="gstin" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-3', isPurchaseBill && 'lg:col-span-3 lg:col-start-4 lg:row-start-3')} hint={interState ? 'Inter-state: IGST applies' : 'Intra-state: CGST + SGST apply'}>
-                <TextInput id="gstin" compact value={header.gstin} placeholder="Party GSTIN" onChange={(e) => setH('gstin', e.target.value.toUpperCase())} />
+              <Field label="GSTIN" htmlFor="gstin" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-3', isPurchaseBill && 'lg:col-span-4 lg:col-start-5 lg:row-start-3', isPurchaseOrder && 'lg:col-span-5 lg:col-start-4 lg:row-start-3')} hint={interState ? 'Inter-state: IGST applies' : 'Intra-state: CGST + SGST applies'}>
+                <TextInput id="gstin" compact value={header.gstin} placeholder={isPurchaseBill || isPurchaseOrder ? 'PARTY GSTIN (B2B)' : 'Party GSTIN'} onChange={(e) => setH('gstin', e.target.value.toUpperCase())} />
               </Field>
             )}
             {cfg.partyLabel && (
@@ -540,24 +587,45 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                       <TextInput compact value={header.address3} placeholder="City - PIN" onChange={(e) => setH('address3', e.target.value)} />
                     </Field>
                   </>
-                ) : <Field label="Address" className={cn('md:col-span-2', !isSalesReturn && !isQuotation && !isPurchaseBill && 'xl:col-span-2', cfg.kind === 'sales' && 'xl:col-span-9', (isSalesReturn || isQuotation) && 'lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:row-span-3', isPurchaseBill && 'lg:col-span-6 lg:col-start-1 lg:row-start-4 xl:col-span-6')}>
+                ) : isPurchaseBill || isPurchaseOrder ? (
+                  <>
+                    <Field label="Adr 1" className="lg:col-span-4 lg:col-start-9 lg:row-start-2">
+                      <TextInput compact value={header.address1} placeholder="DOOR NO, STREET" onChange={(e) => setH('address1', e.target.value)} aria-label="Address line 1" />
+                    </Field>
+                    <Field label="Adr 2" className="lg:col-span-4 lg:col-start-9 lg:row-start-3">
+                      <TextInput compact value={header.address2} placeholder="AREA" onChange={(e) => setH('address2', e.target.value)} aria-label="Address line 2" />
+                    </Field>
+                    <Field label="Adr 3" className="lg:col-span-3 lg:col-start-9 lg:row-start-4">
+                      <TextInput compact value={header.address3} placeholder="CITY - PIN" onChange={(e) => setH('address3', e.target.value)} aria-label="Address line 3" />
+                    </Field>
+                  </>
+                ) : <Field label="Address" className={cn('md:col-span-2', !isSalesReturn && !isQuotation && 'xl:col-span-2', cfg.kind === 'sales' && 'xl:col-span-9', (isSalesReturn || isQuotation) && 'lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:row-span-3')}>
                   <div className={cn('grid gap-2', isSalesReturn || isQuotation ? 'grid-cols-1' : 'sm:grid-cols-3')}>
                     <TextInput compact value={header.address1} placeholder="Door no, street" onChange={(e) => setH('address1', e.target.value)} aria-label="Address line 1" />
                     <TextInput compact value={header.address2} placeholder="Area" onChange={(e) => setH('address2', e.target.value)} aria-label="Address line 2" />
                     <TextInput compact value={header.address3} placeholder="City - PIN" onChange={(e) => setH('address3', e.target.value)} aria-label="Address line 3" />
                   </div>
                 </Field>}
-                <Field label="Cell" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-4 lg:col-start-9 lg:row-start-5', isPurchaseBill && 'lg:col-span-3 lg:col-start-10 lg:row-start-3')}>
+                <Field label="Cell" className={cn(cfg.kind === 'sales' && 'xl:col-span-3', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-4 lg:col-start-9 lg:row-start-5', isPurchaseBill && 'lg:col-span-1 lg:col-start-12 lg:row-start-4', isPurchaseOrder && 'lg:col-span-1 lg:col-start-12 lg:row-start-4')}>
                   <TextInput compact value={header.cell} placeholder="10-digit mobile" maxLength={10} inputMode="numeric" onChange={(e) => setH('cell', e.target.value.replace(/\D/g, ''))} />
                 </Field>
               </>
             )}
             {cfg.showThrough && (
-              <Field label={isOrderLayout ? 'Through' : 'Through (agent)'} htmlFor="through" className={cn(cfg.kind === 'sales' && 'xl:col-span-4', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-2', isPurchaseBill && 'lg:col-span-3 lg:col-start-7 lg:row-start-3')}>
+              <Field label={isOrderLayout || isPurchaseOrder ? 'Through' : 'Through (agent)'} htmlFor="through" className={cn(cfg.kind === 'sales' && 'xl:col-span-4', (isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-2', isPurchaseBill && 'lg:col-span-4 lg:col-start-5 lg:row-start-2', isPurchaseOrder && 'lg:col-span-5 lg:col-start-4 lg:row-start-2')}>
                 <SelectInput id="through" compact value={header.through} onChange={(e) => setH('through', e.target.value)}>
                   <option value="">Direct</option>
                   {(agents ?? []).map((agent: Party) => <option key={agent.id} value={agent.name}>{agent.name}</option>)}
                 </SelectInput>
+              </Field>
+            )}
+            {(isPurchaseBill || isPurchaseOrder) && (
+              <Field label="Cr / CD" className={cn('lg:col-span-4 lg:col-start-5 lg:row-start-4', isPurchaseOrder && 'lg:col-span-5')}>
+                <div className="grid grid-cols-3 gap-2">
+                  <TextInput compact numeric type="number" min={0} value={header.creditDays || ''} placeholder="Cr day" aria-label="Credit days" onChange={(e) => setH('creditDays', Math.max(0, Math.floor(parseNum(e.target.value))))} />
+                  <TextInput compact numeric type="number" min={0} value={header.cashDiscountDays || ''} placeholder="CD day" aria-label="Cash discount days" onChange={(e) => setH('cashDiscountDays', Math.max(0, Math.floor(parseNum(e.target.value))))} />
+                  <TextInput compact numeric type="number" min={0} max={100} step="0.01" value={header.cashDiscountPct || ''} placeholder="CD %" aria-label="Cash discount percent" onChange={(e) => setH('cashDiscountPct', Math.min(100, Math.max(0, parseNum(e.target.value))))} />
+                </div>
               </Field>
             )}
             {cfg.kind === 'sales' && (
@@ -600,7 +668,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                 </div>
               </Field>
             )}
-            {!isPurchaseBill && <Field label={isQuotation || isSalesOrder || isDeliveryChallan ? 'Price' : 'Price list'} htmlFor="price" className={cn(cfg.kind === 'sales' && 'xl:col-span-2', isSalesReturn && 'lg:col-span-5 lg:col-start-4 lg:row-start-5', isQuotation && 'lg:col-span-5 lg:col-start-4 lg:row-start-5', (isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-5')}>
+            {!isPurchaseGrid && <Field label={isQuotation || isSalesOrder || isDeliveryChallan ? 'Price' : 'Price list'} htmlFor="price" className={cn(cfg.kind === 'sales' && 'xl:col-span-2', isSalesReturn && 'lg:col-span-5 lg:col-start-4 lg:row-start-5', isQuotation && 'lg:col-span-5 lg:col-start-4 lg:row-start-5', (isSalesOrder || isDeliveryChallan) && 'lg:col-span-5 lg:col-start-4 lg:row-start-5')}>
               <SelectInput id="price" compact value={header.priceMode} onChange={(e) => setH('priceMode', e.target.value as Header['priceMode'])}>
                 <option value="rate">Sale Rate (F2)</option>
                 <option value="mrp">MRP</option>
@@ -608,16 +676,25 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
               </SelectInput>
             </Field>}
             {cfg.showValidDays && !isSalesOrder && (
-              <Field label="Valid days" hint={`Till ${toDisplayDate(addDays(header.date, header.validDays))}`}>
+              <Field label="Valid days" hint={`Till ${toDisplayDate(addDays(header.date, header.validDays))}`} className={isPurchaseOrder ? 'lg:col-span-3 lg:col-start-1 lg:row-start-4' : undefined}>
                 <TextInput compact type="number" min={1} numeric value={header.validDays} onChange={(e) => setH('validDays', Math.max(1, parseNum(e.target.value)))} />
               </Field>
             )}
-            {!isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan && <Field label="Narration" className={cn(!cfg.showValidDays && !isPurchaseBill && 'xl:col-span-1', cfg.kind === 'sales' && 'xl:col-span-12', isPurchaseBill && 'lg:col-span-6 lg:col-start-7 lg:row-start-4 xl:col-span-6')}>
+            {!isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan && !isPurchaseBill && !isPurchaseOrder && <Field label="Narration" className={cn(!cfg.showValidDays && !isPurchaseBill && 'xl:col-span-1', cfg.kind === 'sales' && 'xl:col-span-12')}>
               <TextInput compact value={header.narration} placeholder="Remarks" onChange={(e) => setH('narration', e.target.value)} />
             </Field>}
           </div>
-          {isPurchaseBill && (
-            <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-cream-200 bg-white px-3 py-2 text-sm font-medium text-navy">
+        </Panel>
+
+        {isPurchaseBill && (
+          <div className="purchase-invoice-bar grid gap-2 rounded-lg border border-[#e7d18f] bg-[#fff4d8] p-2 sm:grid-cols-[minmax(12rem,1fr)_minmax(10rem,.8fr)_minmax(16rem,1.8fr)] sm:items-center">
+            <Field label="Supplier Inv No">
+              <TextInput compact value={supplierInvoiceNo} placeholder="AS ON SUPPLIER INVOICE" onChange={(e) => setSupplierInvoiceNo(e.target.value)} />
+            </Field>
+            <Field label="Inv Date">
+              <TextInput compact type="date" value={supplierInvoiceDate} onChange={(e) => setSupplierInvoiceDate(e.target.value)} aria-label="Supplier invoice date" />
+            </Field>
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#267146] sm:justify-end">
               <input
                 type="checkbox"
                 checked={updateItemMasterPrices}
@@ -626,8 +703,8 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
               />
               Update Purchase Rate / MRP / Sale Rate in Item master
             </label>
-          )}
-        </Panel>
+          </div>
+        )}
 
         {isSalesReturn && (
           <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 md:grid-cols-[minmax(18rem,1fr)_minmax(16rem,1.4fr)] md:items-end">
@@ -651,7 +728,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
           </div>
         )}
 
-        <Panel title={isSalesOrder || isDeliveryChallan ? undefined : 'Items'} icon={isSalesOrder || isDeliveryChallan ? undefined : <ClipboardList className="h-4 w-4" />} flush bodyClassName="p-3">
+        <Panel title={isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder ? undefined : 'Items'} icon={isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder ? undefined : <ClipboardList className="h-4 w-4" />} flush bodyClassName={isPurchaseGrid ? 'p-0' : 'p-3'}>
           <ItemGrid
             lines={lines}
             onChange={setLines}
@@ -662,17 +739,20 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
             showDiscount={isPurchaseBill || (!isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan)}
             showTaxRate={!isSalesOrder && !isDeliveryChallan && !isPurchaseBill}
             showProfit={cfg.showProfit || isSalesReturn}
-            purchaseMode={isPurchaseBill}
+            purchaseMode={isPurchaseGrid}
+            showPurchaseDetail={isPurchaseOrder}
+            showNetRate={!isPurchaseOrder}
             stockOnly={cfg.stockOnly}
           />
         </Panel>
 
         {/* Totals + footer */}
         {!cfg.stockOnly && (
-          <div className={cn('grid gap-3', isSalesOrder ? 'lg:grid-cols-12' : 'lg:grid-cols-5')}>
+          <div className={cn('grid gap-3', isSalesOrder || isPurchaseOrder ? 'lg:grid-cols-12' : isPurchaseBill ? 'lg:grid-cols-12' : 'lg:grid-cols-5')}>
             <div className={cn(
               'h-fit self-start rounded-xl border p-4 text-navy shadow-panel lg:col-span-2',
-              isSalesOrder && 'lg:col-span-4',
+              (isSalesOrder || isPurchaseOrder) && 'lg:col-span-4',
+              isPurchaseBill && 'lg:col-span-5',
               cfg.kind === 'sales' ? 'border-steel-200 bg-gradient-to-br from-steel-100 to-white' : 'border-[#b9e5cb] bg-gradient-to-br from-[#d9f2e2] to-[#b9e5cb]',
             )}>
               <p className={cn('text-xs font-bold uppercase tracking-wider', cfg.kind === 'sales' ? 'text-steel' : 'text-[#1d6b40]')}>Net amount</p>
@@ -680,17 +760,17 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
               <p className="mt-1 text-xs text-slate-600">{totals.lineCount} item(s) · qty {totals.totalQty}</p>
               {previousBill && (
                 <p className="mt-2 border-t border-[#1d6b40]/15 pt-2 text-xs text-slate-600">
-                  Previous {isSalesOrder ? 'order' : 'bill'} {previousBill.no} · Amt {formatINR(previousBill.amount)}
+                  Previous {isSalesOrder || isPurchaseOrder ? 'order' : 'bill'} {previousBill.no} · Amt {formatINR(previousBill.amount)}
                   {'paid' in previousBill && ` · received ${formatINR(previousBill.paid ?? 0)}`}
                 </p>
               )}
             </div>
-            <Panel title="Summary" className={cn('lg:col-span-3', isSalesOrder && 'lg:col-span-4')} bodyClassName="p-3">
+            <Panel title="Summary" className={cn('lg:col-span-3', isSalesOrder && 'lg:col-span-8', isPurchaseOrder && 'lg:col-span-8', isPurchaseBill && 'lg:col-span-7')} bodyClassName="p-3">
               <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 <Row label="Taxable value" value={formatMoneyPlain(totals.taxable)} />
                 <Row label={interState ? 'IGST' : 'CGST'} value={formatMoneyPlain(interState ? totals.igst : totals.cgst)} />
                 {!interState && <Row label="SGST" value={formatMoneyPlain(totals.sgst)} />}
-                {cfg.showSundry && cfg.kind !== 'sales' && !isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan ? (
+                {cfg.showSundry && cfg.kind !== 'sales' && !isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan && !isPurchaseBill && !isPurchaseOrder ? (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-600">Bill sundry</span>
                     <span className="flex items-center gap-2">
@@ -700,10 +780,10 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                       <span className="w-20 text-right font-semibold tabular-nums">{formatMoneyPlain(sundryAmount)}</span>
                     </span>
                   </div>
-                ) :                 <Row label="Bill sundry" value={isSalesOrder || isDeliveryChallan ? formatMoneyPlain(sundryAmount) : '0.00'} />}
-                {(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan) && cfg.showSundry && (
+                ) : <Row label="Bill sundry" value={isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder ? formatMoneyPlain(sundryAmount) : '0.00'} />}
+                {(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder) && cfg.showSundry && (
                   <section className="sales-after-tax rounded-lg border border-steel-200 bg-steel-100/70 p-3 sm:col-span-2">
-                    <h3 className="text-xs font-bold text-navy">{isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan ? 'After tax (Bill Sundry)' : 'After-tax charges'}</h3>
+                    <h3 className="text-xs font-bold text-navy">{isSalesReturn || isQuotation || isSalesOrder || isPurchaseOrder || isDeliveryChallan || isPurchaseBill ? 'After tax (Bill Sundry)' : 'After-tax charges'}</h3>
                     <p className="mb-2 text-[.7rem] text-slate-600">Add a bill sundry by percentage or enter a fixed amount.</p>
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_8rem]">
                       <Field label="Bill sundry" htmlFor="sales-sundry">
@@ -770,61 +850,11 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                 </div>
               </div>
             </Panel>
-            {isSalesOrder && cfg.showSundry && (
-              <Panel title="AFTER Tax (Bill Sundry)" className="lg:col-span-4" bodyClassName="p-3">
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_5rem_7rem]">
-                  <span />
-                  <span className="text-center text-xs font-semibold text-slate-600">%</span>
-                  <span className="text-center text-xs font-semibold text-slate-600">Amt</span>
-                  <SelectInput
-                    compact
-                    value={sundryIdx}
-                    aria-label="Bill sundry"
-                    onChange={(e) => {
-                      setSundryIdx(Number(e.target.value));
-                      setCustomSundryPct('');
-                      setCustomSundryAmount('');
-                    }}
-                  >
-                    {sundryOptions.map((option, index) => (
-                      <option key={option.label} value={index}>{option.label}{option.pct ? ` (${option.pct}%)` : ''}</option>
-                    ))}
-                  </SelectInput>
-                  <TextInput
-                    compact
-                    numeric
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.01"
-                    aria-label="Bill sundry percent"
-                    placeholder="%"
-                    value={customSundryAmount !== ''
-                      ? (sundryBase > 0 ? round2((sundryAmount / sundryBase) * 100) : '')
-                      : customSundryPct === '' ? sundryPct || '' : customSundryPct}
-                    onChange={(e) => {
-                      setCustomSundryPct(e.target.value);
-                      setCustomSundryAmount('');
-                    }}
-                  />
-                  <TextInput
-                    compact
-                    numeric
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    aria-label="Bill sundry amount"
-                    value={customSundryAmount === '' ? formatMoneyPlain(sundryAmount) : customSundryAmount}
-                    onChange={(e) => setCustomSundryAmount(e.target.value)}
-                  />
-                </div>
-              </Panel>
-            )}
           </div>
         )}
 
         {/* Footer toolbar */}
-        <div className={cn('no-print z-10 flex flex-wrap items-center gap-2 rounded-xl border border-[#e3d6bd] bg-white/95 p-2.5 shadow-pop backdrop-blur', !isPurchaseBill && 'sticky bottom-0')}>
+        <div className="no-print sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-[#e3d6bd] bg-white/95 p-2.5 shadow-pop backdrop-blur">
           <Button variant="danger" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setConfirm('delete')}>Delete</Button>
           <Button variant="outline" size="sm" icon={<XCircle className="h-4 w-4" />} onClick={() => setConfirm('cancel')}>Cancel</Button>
           <Button variant="navy" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => setShowPreview(true)}>Print</Button>
@@ -859,8 +889,8 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
           partyAddress: [header.address1, header.address2, header.address3].filter(Boolean).join(', '), partyGstin: header.gstin,
           note: isSalesReturn
             ? [againstBillNo.trim() && `Against bill ${againstBillNo.trim()}`, returnReason.trim() && `Reason: ${returnReason.trim()}`].filter(Boolean).join(' · ')
-            : isSalesOrder || isDeliveryChallan
-              ? [`Through: ${header.through || 'Direct'}`, isSalesOrder && `Valid for ${header.validDays} days`, header.creditDays > 0 && `Credit days: ${header.creditDays}`, header.cashDiscountDays > 0 && `CD days: ${header.cashDiscountDays}`, header.cashDiscountPct > 0 && `CD: ${header.cashDiscountPct}%`, sundryAmount > 0 && `Bill sundry: ${sundry?.label ?? 'Other charges'} ${formatMoneyPlain(sundryAmount)}`].filter(Boolean).join(' · ')
+            : isSalesOrder || isPurchaseOrder || isDeliveryChallan
+              ? [`Through: ${header.through || 'Direct'}`, (isSalesOrder || isPurchaseOrder) && `Valid for ${header.validDays} days`, header.creditDays > 0 && `Credit days: ${header.creditDays}`, header.cashDiscountDays > 0 && `CD days: ${header.cashDiscountDays}`, header.cashDiscountPct > 0 && `CD: ${header.cashDiscountPct}%`, sundryAmount > 0 && `Bill sundry: ${sundry?.label ?? 'Other charges'} ${formatMoneyPlain(sundryAmount)}`].filter(Boolean).join(' · ')
               : isPurchaseBill
                 ? [`Supplier invoice: ${supplierInvoiceNo || '—'}`, `Invoice date: ${toDisplayDate(supplierInvoiceDate)}`].join(' · ')
               : undefined,

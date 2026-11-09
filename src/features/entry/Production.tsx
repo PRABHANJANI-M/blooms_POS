@@ -53,9 +53,9 @@ export function Production() {
   return (
     <>
       <PageHeader variant="bill" title="Production" shortcuts="Enter = next · Alt+L = last recipe · F10 = save · Alt+N = new · Esc = dashboard" />
-      <div className="mt-3 space-y-3">
+      <div className="entry-create-form mt-3 space-y-3">
         <DemoNotice />
-        <Panel bodyClassName="p-3 sm:p-4">
+        <Panel className="entry-header-panel" bodyClassName="p-3 sm:p-4">
           <div className="grid gap-3 sm:grid-cols-[8rem_12rem_1fr]">
             <Field label="Prod No"><TextInput compact readOnly value={prodNo} aria-label="Production number" /></Field>
             <Field label="Date" htmlFor="pdate"><TextInput id="pdate" type="date" compact value={date} onChange={(e) => setDate(e.target.value)} /></Field>

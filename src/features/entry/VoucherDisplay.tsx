@@ -20,6 +20,7 @@ import { formatINR } from '../../utils/money';
 import { toDisplayDate, todayISO, addDays } from '../../utils/date';
 import type { VoucherRow } from '../../types';
 import { computeTotals } from '../../utils/billing';
+import { useHotkeys } from '../../hooks/useHotkeys';
 import { InvoicePreview } from '../billing/InvoicePreview';
 import type { QuotationTransfer } from './VoucherForm';
 import { voucherConfigs, type VoucherKind } from './voucherConfig';
@@ -33,7 +34,10 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
   const isSalesReturn = kind === 'sales-return';
   const isQuotation = kind === 'quotation';
   const isSalesOrder = kind === 'sales-order';
+  const isPurchaseRegister = kind === 'purchase-bill';
+  const isPurchaseOrderRegister = kind === 'purchase-order';
   const isSpecialRegister = isSalesReturn || isQuotation || isSalesOrder;
+  const isDedicatedRegister = isSpecialRegister || isPurchaseRegister || isPurchaseOrderRegister;
   const navigate = useNavigate();
   const toast = useAppStore((s) => s.toast);
   const saved = useDemoStore((s) => s.vouchers[kind] ?? NO_ROWS);
@@ -87,6 +91,9 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
     ] : isSalesOrder ? [
       { key: 'items', header: 'Items', render: (r: VoucherRow) => r.lines?.filter((line) => line.name).map((line) => `${line.name} × ${line.qty}`).join(', ') || '—' },
       { key: 'orderDetails', header: 'Order details', render: (r: VoucherRow) => r.extra || '—' },
+    ] : isPurchaseRegister || isPurchaseOrderRegister ? [
+      { key: 'items', header: 'Items', render: (r: VoucherRow) => r.lines?.filter((line) => line.name).map((line) => `${line.name} × ${line.qty}`).join(', ') || '—' },
+      { key: 'purchaseDetails', header: isPurchaseOrderRegister ? 'Order details' : 'Supplier invoice / details', render: (r: VoucherRow) => r.extra || '—' },
     ] : [
       { key: 'mode', header: 'Payment', render: (r: VoucherRow) => r.mode ?? '—' },
       { key: 'paid', header: 'Paid', align: 'right' as const, sortValue: (r: VoucherRow) => r.paid ?? 0, render: (r: VoucherRow) => formatINR(r.paid ?? 0) },
@@ -104,13 +111,15 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
           ? [{ key: 'items', label: 'Items' }, { key: 'extra', label: 'Terms / Agent' }]
         : detailed && isSalesOrder
           ? [{ key: 'items', label: 'Items' }, { key: 'extra', label: 'Order details' }]
+        : detailed && (isPurchaseRegister || isPurchaseOrderRegister)
+          ? [{ key: 'items', label: 'Items' }, { key: 'extra', label: isPurchaseOrderRegister ? 'Order details' : 'Supplier invoice / details' }]
         : detailed ? [{ key: 'mode', label: 'Payment' }, { key: 'paid', label: 'Paid' }] : []),
     { key: 'amount', label: 'Amount' },
     ];
     const exportRows = rows.map((row) => ({
       ...row,
       items: row.lines?.filter((line) => line.name)
-        .map((line) => isSalesOrder ? `${line.name} × ${line.qty}` : line.name)
+        .map((line) => isSalesOrder || isPurchaseRegister || isPurchaseOrderRegister ? `${line.name} × ${line.qty}` : line.name)
         .join(', ') ?? '',
     }));
 
@@ -123,6 +132,11 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
   const selectedRow = rows.find((row) => row.id === selected);
   const quickStatuses = [...new Set([...saved, ...base].map((row) => row.status))];
   const resetAdvanced = () => { setStatusFilter(''); setMinAmount(''); setMaxAmount(''); };
+  useHotkeys(isPurchaseRegister || isPurchaseOrderRegister ? {
+    PageUp: () => { setFrom((value) => addDays(value, -1)); setTo((value) => addDays(value, -1)); },
+    PageDown: () => { setFrom((value) => addDays(value, 1)); setTo((value) => addDays(value, 1)); },
+    Escape: () => navigate('/'),
+  } : {});
   const printSelectedBill = () => {
     document.body.classList.add('print-selected-bill');
     window.addEventListener('afterprint', () => document.body.classList.remove('print-selected-bill'), { once: true });
@@ -165,30 +179,33 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
 
   return (
     <>
-      <PageHeader variant="bill" title={`${cfg.title} Display`} shortcuts="Select a row · PgUp / PgDn = dates · Refresh = reload · Esc = dashboard" />
+      <PageHeader variant="bill" title={isPurchaseOrderRegister ? 'Purchase Order Display' : isPurchaseRegister ? 'Purchase Display' : `${cfg.title} Display`} shortcuts="Select a row · PgUp / PgDn = dates · Refresh = reload · Esc = dashboard" />
       <div className="mt-3 space-y-3">
-        {kind !== 'sales' && !isSpecialRegister && <DemoNotice />}
+        {kind !== 'sales' && !isDedicatedRegister && <DemoNotice />}
         <Panel bodyClassName="p-3 sm:p-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <DateRange from={from} to={to} onChange={onRange} />
             <div className="flex flex-wrap items-end gap-2">
-              {!isSpecialRegister && <input className="input input-sm w-56" placeholder={`Search no / ${cfg.partyLabel?.toLowerCase() ?? 'name'}`} value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search register" />}
-              {!isSpecialRegister && <Button size="sm" variant="navy" icon={<RefreshCw className="h-4 w-4" />} onClick={() => { setLoaded(true); toast({ tone: 'info', title: 'Refreshed', message: `${rows.length} record(s) in range.` }); }}>Refresh</Button>}
-              {!isSpecialRegister && <Button size="sm" variant="outline" icon={<Filter className="h-4 w-4" />} onClick={() => setAdvancedOpen(true)}>Advanced{statusFilter || minAmount || maxAmount ? ' · Active' : ''}</Button>}
+              {!isDedicatedRegister && <input className="input input-sm w-56" placeholder={`Search no / ${cfg.partyLabel?.toLowerCase() ?? 'name'}`} value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search register" />}
+              {!isDedicatedRegister && <Button size="sm" variant="navy" icon={<RefreshCw className="h-4 w-4" />} onClick={() => { setLoaded(true); toast({ tone: 'info', title: 'Refreshed', message: `${rows.length} record(s) in range.` }); }}>Refresh</Button>}
+              {!isDedicatedRegister && <Button size="sm" variant="outline" icon={<Filter className="h-4 w-4" />} onClick={() => setAdvancedOpen(true)}>Advanced{statusFilter || minAmount || maxAmount ? ' · Active' : ''}</Button>}
             </div>
           </div>
         </Panel>
 
-        <Panel flush title={isSpecialRegister ? undefined : `${cfg.title} register`} actions={isSpecialRegister ? undefined : <div className="flex items-center gap-2">
+        <Panel flush title={isDedicatedRegister ? undefined : `${cfg.title} register`} actions={isDedicatedRegister ? undefined : <div className="flex items-center gap-2">
           {kind === 'sales' && <div className="inline-flex rounded-full border border-steel-200 bg-steel-100 p-0.5">
             <button type="button" className={`rounded-full px-3 py-1 text-xs font-semibold ${!detailed ? 'bg-fiery text-white shadow-sm' : 'text-slate-600'}`} onClick={() => setDetailed(false)}>Normal view</button>
             <button type="button" className={`rounded-full px-3 py-1 text-xs font-semibold ${detailed ? 'bg-fiery text-white shadow-sm' : 'text-slate-600'}`} onClick={() => setDetailed(true)}>Detailed view</button>
           </div>}
-          <span className="text-xs text-slate-500">{rows.length} record(s)</span>
+          {!isPurchaseRegister && !isPurchaseOrderRegister && <span className="text-xs text-slate-500">{rows.length} record(s)</span>}
         </div>}>
-          {isSpecialRegister && rows.length === 0 ? (
+          {isDedicatedRegister && rows.length === 0 ? (
             <div className="flex min-h-[48vh] items-center justify-center">
-              <EmptyState title={`No ${isQuotation ? 'quotations' : isSalesOrder ? 'orders' : 'returns'} from ${toDisplayDate(from)} to ${toDisplayDate(to)}.`} />
+              <EmptyState title={isPurchaseOrderRegister
+                ? `No orders from ${toDisplayDate(from)} to ${toDisplayDate(to)}.`
+                : isPurchaseRegister ? `No purchases from ${toDisplayDate(from)} to ${toDisplayDate(to)}.`
+                : `No ${isQuotation ? 'quotations' : isSalesOrder ? 'orders' : 'returns'} from ${toDisplayDate(from)} to ${toDisplayDate(to)}.`} />
             </div>
           ) : (
             <DataTable<VoucherRow>
@@ -197,7 +214,7 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
               rowKey={(r) => r.id}
               onRowClick={(r) => setSelected(r.id)}
               selectedKey={selected}
-              pageSize={kind === 'sales' || isSpecialRegister ? 50 : 10}
+              pageSize={kind === 'sales' || isDedicatedRegister ? 50 : 10}
               emptyTitle={`No ${cfg.title.toLowerCase()}s from ${toDisplayDate(from)} to ${toDisplayDate(to)}`}
               emptyMessage="Change the date range or create a new entry."
               footer={cfg.stockOnly ? undefined : (
@@ -208,46 +225,52 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
           )}
         </Panel>
 
-        {isSpecialRegister && (
+        {isDedicatedRegister && (
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-semibold text-navy">
-            <span>{isQuotation ? 'Quotations' : isSalesOrder ? 'Orders' : 'Returns'}: {rows.length} · {toDisplayDate(from)}</span>
+            <span>{isPurchaseOrderRegister || isSalesOrder ? 'Orders' : isPurchaseRegister ? 'Purchases' : isQuotation ? 'Quotations' : 'Returns'}: {rows.length} · {toDisplayDate(from)}</span>
             <span className="rounded-md bg-steel-100 px-2.5 py-1">Net Total {formatINR(net)}</span>
+            {(isPurchaseRegister || isPurchaseOrderRegister) && (
+              <div className="ml-auto inline-flex rounded-full border border-steel-200 bg-white p-0.5">
+                <button type="button" aria-pressed={!detailed} className={`rounded-full px-3 py-1 text-xs font-semibold ${!detailed ? 'bg-fiery text-white shadow-sm' : 'text-slate-600'}`} onClick={() => setDetailed(false)}>Normal view</button>
+                <button type="button" aria-pressed={detailed} className={`rounded-full px-3 py-1 text-xs font-semibold ${detailed ? 'bg-fiery text-white shadow-sm' : 'text-slate-600'}`} onClick={() => setDetailed(true)}>Detailed view</button>
+              </div>
+            )}
           </div>
         )}
 
         <div className="no-print flex flex-wrap items-center gap-2 rounded-xl border border-[#e3d6bd] bg-white p-2.5 shadow-panel">
           <Button size="sm" variant="outline" icon={<RefreshCw className="h-4 w-4" />} onClick={() => {
             setLoaded(true);
-            toast({ tone: 'info', title: 'Refreshed', message: `${rows.length} ${isQuotation ? 'quotation' : isSalesOrder ? 'order' : 'record'}(s) in range.` });
+            toast({ tone: 'info', title: 'Refreshed', message: `${rows.length} ${isQuotation ? 'quotation' : isSalesOrder || isPurchaseOrderRegister ? 'order' : 'record'}(s) in range.` });
           }}>Refresh</Button>
           <ExportBar
             filename={`${cfg.title.replace(/\s+/g, '_')}_${from}_${to}`}
             columns={exportCols}
             rows={exportRows as unknown as Record<string, unknown>[]}
             showWhatsApp={isBillKind}
-            printLabel={isSpecialRegister ? 'Print A4' : 'Print'}
+            printLabel={isDedicatedRegister ? 'Print A4' : 'Print'}
           />
-          {(kind === 'sales' || isSpecialRegister) && <Button size="sm" variant="navy" icon={<Printer className="h-4 w-4" />} disabled={!selectedRow} onClick={() => selectedRow && setBillToPrint(selectedRow)}>Bill Print</Button>}
-          {isBillKind && !isSpecialRegister && <Button size="sm" variant="outline" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()}>Print A4</Button>}
-          {(kind === 'delivery-challan' || kind === 'sales' || isSpecialRegister) && <Button size="sm" variant="outline" onClick={() => toast({ tone: 'warning', title: 'E-waybill not connected', message: 'E-waybill generation requires a GST-connected provider; no data was sent.' })}>E-waybill</Button>}
+          {(kind === 'sales' || isSpecialRegister || isPurchaseRegister || isPurchaseOrderRegister) && <Button size="sm" variant="navy" icon={<Printer className="h-4 w-4" />} disabled={!selectedRow} onClick={() => selectedRow && setBillToPrint(selectedRow)}>Bill Print</Button>}
+          {isBillKind && !isDedicatedRegister && <Button size="sm" variant="outline" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()}>Print A4</Button>}
+          {(kind === 'delivery-challan' || kind === 'sales' || isSpecialRegister || isPurchaseRegister || isPurchaseOrderRegister) && <Button size="sm" variant="outline" onClick={() => toast({ tone: 'warning', title: 'E-waybill not connected', message: 'E-waybill generation requires a GST-connected provider; no data was sent.' })}>E-waybill</Button>}
           {isSpecialRegister && (
             <>
               <div className="inline-flex rounded-full border border-steel-200 bg-steel-100 p-0.5">
                 <button type="button" aria-pressed={!detailed} className={`rounded-full px-3 py-1 text-xs font-semibold ${!detailed ? 'bg-fiery text-white shadow-sm' : 'text-slate-600'}`} onClick={() => setDetailed(false)}>Normal view</button>
                 <button type="button" aria-pressed={detailed} className={`rounded-full px-3 py-1 text-xs font-semibold ${detailed ? 'bg-fiery text-white shadow-sm' : 'text-slate-600'}`} onClick={() => setDetailed(true)}>Detailed view</button>
               </div>
-              <Button size="sm" variant="outline" icon={<Filter className="h-4 w-4" />} onClick={() => setAdvancedOpen(true)}>Advanced{statusFilter || minAmount || maxAmount ? ' · Active' : ''}</Button>
             </>
           )}
+          {(isPurchaseRegister || isPurchaseOrderRegister) && <Button size="sm" variant="outline" icon={<Filter className="h-4 w-4" />} onClick={() => setAdvancedOpen(true)}>Advanced{statusFilter || minAmount || maxAmount || query ? ' · Active' : ''}</Button>}
           {isQuotation && <Button size="sm" variant="steel" icon={<FilePlus className="h-4 w-4" />} disabled={!selectedRow} onClick={makeSelectedQuotationBill}>Make Bill</Button>}
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => navigate(newPath)}>New {isSalesReturn ? 'Return' : isSalesOrder ? 'Order' : cfg.title}</Button>
+            <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => navigate(newPath)}>New {isSalesReturn ? 'Return' : isSalesOrder || isPurchaseOrderRegister ? 'Order' : isPurchaseRegister ? 'Purchase' : cfg.title}</Button>
             <Button size="sm" variant="outline" icon={<XCircle className="h-4 w-4" />} onClick={() => setSelected(null)}>Cancel</Button>
             <Button size="sm" variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setConfirmDelete(true)} disabled={!loadedSavedIds.size}>Delete Loaded</Button>
           </div>
         </div>
         {kind === 'sales' && <p className="text-xs text-slate-500">Bills: {rows.length} · {toDisplayDate(from)} – {toDisplayDate(to)} · Net total {formatINR(net)} · {selectedRow ? `Selected bill ${selectedRow.no}` : 'Select a bill row to print it.'}</p>}
-        {!loaded && !isSpecialRegister && <p className="text-xs text-slate-500">Showing today&apos;s records. Adjust the dates, then press Refresh to reload.</p>}
+        {!loaded && !isDedicatedRegister && <p className="text-xs text-slate-500">Showing today&apos;s records. Adjust the dates, then press Refresh to reload.</p>}
       </div>
 
       <ConfirmDialog
@@ -264,7 +287,7 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
         footer={<><Button variant="outline" onClick={() => { resetAdvanced(); setAdvancedOpen(false); }}>Clear filters</Button><Button variant="primary" onClick={() => { setLoaded(true); setAdvancedOpen(false); }}>Apply filters</Button></>}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Status"><SelectInput value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All statuses</option>{quickStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</SelectInput></Field>
-          <Field label="Customer / party"><TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or bill number" /></Field>
+          <Field label={`${isPurchaseRegister || isPurchaseOrderRegister ? 'Supplier' : cfg.partyLabel ?? 'Customer'} / party`}><TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or bill number" /></Field>
           <Field label="Minimum amount (₹)"><TextInput type="number" min={0} value={minAmount} onChange={(event) => setMinAmount(event.target.value)} placeholder="No minimum" /></Field>
           <Field label="Maximum amount (₹)"><TextInput type="number" min={0} value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} placeholder="No maximum" /></Field>
         </div>
@@ -284,12 +307,14 @@ export function VoucherDisplay({ kind }: { kind: VoucherKind }) {
             ) : (
               <div className="print-area mx-auto max-w-md space-y-4 rounded-lg border border-cream-200 bg-white p-5 text-sm">
                 <div className="border-b border-cream-200 pb-3 text-center"><h2 className="text-lg font-bold text-navy">Blooms Retail Pvt Ltd</h2><p className="font-semibold text-maroon">{cfg.title}</p></div>
-                <dl className="grid grid-cols-2 gap-2"><dt className="text-slate-500">No.</dt><dd className="text-right font-semibold">{billToPrint.no}</dd><dt className="text-slate-500">Date</dt><dd className="text-right font-semibold">{toDisplayDate(billToPrint.date)}</dd><dt className="text-slate-500">Customer</dt><dd className="text-right font-semibold">{billToPrint.party}</dd>
+                <dl className="grid grid-cols-2 gap-2"><dt className="text-slate-500">No.</dt><dd className="text-right font-semibold">{billToPrint.no}</dd><dt className="text-slate-500">Date</dt><dd className="text-right font-semibold">{toDisplayDate(billToPrint.date)}</dd><dt className="text-slate-500">{isPurchaseRegister || isPurchaseOrderRegister ? 'Supplier' : 'Customer'}</dt><dd className="text-right font-semibold">{billToPrint.party}</dd>
                   {isSalesReturn
                     ? <><dt className="text-slate-500">Return details</dt><dd className="text-right font-semibold">{billToPrint.extra || '—'}</dd></>
                     : isQuotation
                       ? <><dt className="text-slate-500">Terms / Agent</dt><dd className="text-right font-semibold">{billToPrint.extra || '—'}</dd></>
                     : isSalesOrder
+                      ? <><dt className="text-slate-500">Order details</dt><dd className="text-right font-semibold">{billToPrint.extra || '—'}</dd></>
+                    : isPurchaseOrderRegister
                       ? <><dt className="text-slate-500">Order details</dt><dd className="text-right font-semibold">{billToPrint.extra || '—'}</dd></>
                     : <><dt className="text-slate-500">Payment</dt><dd className="text-right font-semibold">{billToPrint.mode ?? billToPrint.status}</dd><dt className="text-slate-500">Paid</dt><dd className="text-right font-semibold">{formatINR(billToPrint.paid ?? (billToPrint.status === 'Paid' ? billToPrint.amount : 0))}</dd></>}
                 </dl>

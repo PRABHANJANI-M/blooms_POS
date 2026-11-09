@@ -226,10 +226,10 @@ export function PosBilling() {
         }
       />
 
-      <div className="mt-3 space-y-3">
+      <div className="entry-create-form mt-3 space-y-3">
         <DemoNotice>Recording a POS bill does not charge a card, UPI or bank account.</DemoNotice>
 
-        <div className="grid gap-3 rounded-xl border border-[#e3d6bd] bg-white p-3 shadow-panel md:grid-cols-[1.1fr_1.4fr_1fr_auto]">
+        <div className="entry-header-panel grid gap-3 rounded-xl border border-[#e3d6bd] bg-white p-3 shadow-panel md:grid-cols-[1.1fr_1.4fr_1fr_auto]">
           <label className="min-w-0">
             <span className="label">Cell No <span className="font-normal text-slate-400">(10 digits, blank = walk-in)</span></span>
             <input className="input" inputMode="numeric" placeholder="10 digit cell - Enter" value={cell} onChange={(e) => onCell(e.target.value)} aria-label="Cell number" onKeyDown={(e) => { if (e.key === 'Enter') document.getElementById('pos-customer')?.focus(); }} />

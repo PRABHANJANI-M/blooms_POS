@@ -46,9 +46,9 @@ export function VoucherEntry() {
   return (
     <>
       <PageHeader variant="bill" title="Voucher" shortcuts="Enter = next · Alt+N = new · Ctrl+S = save · Esc = dashboard" />
-      <div className="mt-3 space-y-3">
+      <div className="entry-create-form mt-3 space-y-3">
         <DemoNotice />
-        <Panel bodyClassName="p-3 sm:p-4">
+        <Panel className="entry-header-panel" bodyClassName="p-3 sm:p-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <Field label="Voucher type" htmlFor="vtype">
               <SelectInput id="vtype" compact value={type} onChange={(e) => setType(e.target.value as (typeof voucherTypes)[number])}>

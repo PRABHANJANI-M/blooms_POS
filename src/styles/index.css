@@ -168,10 +168,58 @@
   .delivery-challan-create-form .sales-header-panel .select { min-width: 0; }
   .delivery-challan-create-form .table-wrap { min-height: 28vh; }
   .delivery-challan-create-form .data-table { min-width: 1050px; }
+  .entry-create-form .entry-header-panel {
+    border-color: #b8cce4;
+    background: #dfe9f6;
+  }
+  .entry-create-form .entry-header-panel .label { color: #173c60; }
+  .entry-create-form .entry-header-panel .input,
+  .entry-create-form .entry-header-panel .select { border-color: #b7cde6; }
+  .entry-create-form .table-wrap { min-height: 28vh; }
+  .entry-create-form .data-table thead th {
+    padding: .38rem .48rem;
+    background: #b7cde6;
+    color: #172f49;
+    font-size: .7rem;
+  }
+  .entry-create-form .data-table tbody td {
+    padding: .34rem .48rem;
+    border-color: #c5d8ea;
+    background: #fff;
+    font-size: .74rem;
+  }
+  .entry-create-form .data-table tbody tr:nth-child(even) td { background: #f5f8fc; }
+  .entry-create-form .data-table tbody tr:hover td { background: #e8f1fa; }
+  .entry-create-form .data-table tfoot td { background: #c7d9ed; color: #173c60; }
+  .purchase-order-create-form .data-table { min-width: 1320px; }
   .purchase-bill-create-form .sales-header-panel .input,
   .purchase-bill-create-form .sales-header-panel .select { min-width: 0; }
-  .purchase-bill-create-form .table-wrap { min-height: 32vh; }
-  .purchase-bill-create-form .data-table { min-width: 1450px; }
+  .purchase-bill-create-form .table-wrap { min-height: 30vh; max-height: 40vh; }
+  .purchase-bill-create-form .data-table { min-width: 1240px; }
+  .purchase-bill-create-form .data-table thead th {
+    padding: .38rem .42rem;
+    background: #b7cde6;
+    color: #172f49;
+    font-size: .68rem;
+  }
+  .purchase-bill-create-form .data-table tbody td {
+    padding: .3rem .38rem;
+    border-color: #c5d8ea;
+    background: #fff;
+    font-size: .72rem;
+  }
+  .purchase-bill-create-form .data-table tbody tr:nth-child(even) td { background: #f5f8fc; }
+  .purchase-bill-create-form .data-table tbody tr:hover td { background: #e8f1fa; }
+  .purchase-bill-create-form .data-table .input { min-width: 0; }
+  .purchase-bill-create-form .sales-after-tax {
+    border-color: var(--color-steel-200);
+    background: linear-gradient(135deg, var(--color-steel-100), #fff);
+  }
+  .purchase-bill-create-form .sales-after-tax .input,
+  .purchase-bill-create-form .sales-after-tax .select { border-color: var(--color-steel-200); }
+  .purchase-bill-create-form .sales-after-tax .input:focus,
+  .purchase-bill-create-form .sales-after-tax .select:focus { border-color: var(--color-steel); }
+  .purchase-invoice-bar .label { color: #236744; }
 
   /* ---------- Scrollbars ---------- */
   .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }

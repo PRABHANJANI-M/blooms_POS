@@ -54,9 +54,9 @@ export function GodownTransfer() {
   return (
     <>
       <PageHeader variant="bill" title="Godown Transfer" shortcuts="Enter = next · Space = item list · F10 = save · Alt+N = new · Esc = dashboard" />
-      <div className="mt-3 space-y-3">
+      <div className="entry-create-form mt-3 space-y-3">
         <DemoNotice />
-        <Panel bodyClassName="p-3 sm:p-4">
+        <Panel className="entry-header-panel" bodyClassName="p-3 sm:p-4">
           <div className="grid gap-3 md:grid-cols-[auto_1fr_auto_1fr_1fr]">
             <Field label="No"><div className="flex h-9 w-20 items-center justify-center rounded-lg bg-steel-100 font-bold text-navy">{number}</div></Field>
             <Field label="Date" htmlFor="gdate"><TextInput id="gdate" type="date" compact value={date} onChange={(e) => setDate(e.target.value)} /></Field>

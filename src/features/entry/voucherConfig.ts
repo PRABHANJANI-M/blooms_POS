@@ -72,7 +72,8 @@ export const voucherConfigs: Record<VoucherKind, VoucherKindConfig> = {
   },
   'purchase-order': {
     ...base, kind: 'purchase-order', title: 'Purchase Order', prefix: 'PO', partyLabel: 'Supplier', partyKind: 'supplier',
-    showValidDays: true, displayPath: '/entry/purchase-order/display', pendingPath: '/entry/purchase-order/pending', label: 'Purchase order',
+    showValidDays: true, showThrough: true, showMrp: true, showBatch: true, showSundry: true,
+    displayPath: '/entry/purchase-order/display', pendingPath: '/entry/purchase-order/pending', label: 'Purchase order',
     actions: ['auto-order', 'from-orders', 'extend', 'close-order'],
   },
   'purchase-return': {

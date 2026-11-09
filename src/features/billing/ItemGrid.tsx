@@ -23,6 +23,8 @@ interface ItemGridProps {
   showTaxRate?: boolean;
   showProfit?: boolean;
   purchaseMode?: boolean;
+  showPurchaseDetail?: boolean;
+  showNetRate?: boolean;
   readOnly?: boolean;
   /** Stock-only grids (stock journal, checking) hide every money column. */
   stockOnly?: boolean;
@@ -42,7 +44,7 @@ const priceFor = (item: Item, mode: PriceMode, purchaseMode = false) => purchase
  */
 export function ItemGrid({
   lines, onChange, items, priceMode = 'rate', onPriceModeChange, onEmptyRowEnter, onActiveRowChange, focusTarget, showMrp = false, showBatch = false, showDiscount = true,
-  showTax = true, showTaxRate = true, showProfit = false, purchaseMode = false, readOnly = false, stockOnly = false,
+  showTax = true, showTaxRate = true, showProfit = false, purchaseMode = false, showPurchaseDetail = false, showNetRate = true, readOnly = false, stockOnly = false,
 }: ItemGridProps) {
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -102,6 +104,7 @@ export function ItemGrid({
     update(index, {
       itemId: item.id, code: item.code, name: item.name, unit: item.unit, mrp: item.mrp,
       rate: stockOnly ? 0 : rate, gstRate: item.gstRate, detail: item.brand,
+      ...(purchaseMode ? { salesRate: item.rate } : {}),
       batchNo: showBatch ? `B${item.code.slice(-3)}` : '', qty: lines[index]?.qty || 1,
     });
   };
@@ -112,10 +115,11 @@ export function ItemGrid({
   };
 
   const cols = purchaseMode ? [
-    { label: '#', show: true, cls: 'w-10 text-center' },
+    { label: 'Sno', show: true, cls: 'w-10 text-center' },
     { label: 'Code', show: true },
-    { label: 'Item name', show: true, cls: 'min-w-[16rem]' },
-    { label: 'Batch', show: showBatch },
+    { label: 'Item Name', show: true, cls: 'min-w-[16rem]' },
+    { label: 'Detail', show: showPurchaseDetail, cls: 'min-w-[7rem]' },
+    { label: 'Batch No', show: showBatch },
     { label: 'Unit', show: true },
     { label: 'Qty', show: true, num: true },
     { label: 'Rate+Tax', show: showTax, num: true },
@@ -128,7 +132,7 @@ export function ItemGrid({
     { label: 'Amount', show: true, num: true },
     { label: 'Taxation', show: showTax, num: true },
     { label: 'Tot Amt', show: true, num: true },
-    { label: 'Net Rate', show: true, num: true },
+    { label: 'Net Rate', show: showNetRate, num: true },
     { label: '', show: !readOnly },
   ].filter((c) => c.show) : [
     { label: '#', show: true, cls: 'w-10 text-center' },
@@ -187,13 +191,13 @@ export function ItemGrid({
           {lines.map((line, index) => {
             const profit = line.name && !stockOnly ? round2((line.rate - line.rate * 0.8) * line.qty) : 0;
             const profitPct = line.amount ? round2((profit / line.amount) * 100) : 0;
-            const saleRate = items.find((item) => item.id === line.itemId)?.rate ?? 0;
+            const saleRate = line.salesRate ?? items.find((item) => item.id === line.itemId)?.rate ?? 0;
             const netRate = line.qty ? round2(line.taxable / line.qty) : 0;
             const marginPct = saleRate ? round2(((saleRate - netRate) / saleRate) * 100) : 0;
             const isLast = index === lines.length - 1;
             return (
               <tr key={line.uid} data-row-index={index} className={cn(isLast && !line.name && 'bg-steel-100/40')}>
-                <td className={cn('text-center text-slate-500', columnClass('#'))}>{index + 1}</td>
+                <td className={cn('text-center text-slate-500', columnClass(purchaseMode ? 'Sno' : '#'))}>{index + 1}</td>
                 <td className={cn('font-mono text-xs text-slate-600', columnClass('Code'))}>
                   {!readOnly && !stockOnly ? (
                     <input
@@ -223,7 +227,7 @@ export function ItemGrid({
                     />
                   ) : line.code || <span className="text-slate-300">—</span>}
                 </td>
-                <td className="!whitespace-normal">
+                <td className={cn('!whitespace-normal', columnClass(purchaseMode ? 'Item Name' : 'Item name'))}>
                   <ItemPicker
                     value={line.name}
                     items={items}
@@ -242,8 +246,9 @@ export function ItemGrid({
                     }}
                   />
                 </td>
+                {purchaseMode && showPurchaseDetail && <td className={columnClass('Detail')}><input data-grid-field="detail" className="input input-sm min-w-[7rem]" value={line.detail} disabled={readOnly} onChange={(e) => update(index, { detail: e.target.value })} onKeyDown={moveOnEnter} aria-label="Detail" /></td>}
                 {!purchaseMode && <td className={columnClass('Detail')}><input data-grid-field="detail" className="input input-sm min-w-[7rem]" value={line.detail} disabled={readOnly} onChange={(e) => update(index, { detail: e.target.value })} onKeyDown={moveOnEnter} aria-label="Detail" /></td>}
-                {showBatch && <td className={columnClass('Batch')}><input data-grid-field="batch" className="input input-sm w-24" value={line.batchNo} disabled={readOnly} onChange={(e) => update(index, { batchNo: e.target.value })} onKeyDown={moveOnEnter} aria-label="Batch number" /></td>}
+                {showBatch && <td className={columnClass(purchaseMode ? 'Batch No' : 'Batch')}><input data-grid-field="batch" className="input input-sm w-24" value={line.batchNo} disabled={readOnly} onChange={(e) => update(index, { batchNo: e.target.value })} onKeyDown={moveOnEnter} aria-label="Batch number" /></td>}
                 <td className={columnClass('Unit')}><span className="text-slate-600">{line.unit || '—'}</span></td>
                 {purchaseMode && <td className={cn('num', columnClass('Qty'))}><NumInput field="qty" value={line.qty} disabled={readOnly} label="Quantity" step="any" onChange={(v) => update(index, { qty: v })} onKeyDown={moveOnEnter} /></td>}
                 {showMrp && !stockOnly && !purchaseMode && <td className={cn('num', columnClass('MRP'))}>{line.mrp ? formatMoneyPlain(line.mrp) : '—'}</td>}
@@ -260,15 +265,15 @@ export function ItemGrid({
                 {!purchaseMode && <td className={cn('num', columnClass('Qty'))}><NumInput field="qty" value={line.qty} disabled={readOnly} label="Quantity" step="any" onChange={(v) => update(index, { qty: v })} onKeyDown={moveOnEnter} /></td>}
                 {showDiscount && !stockOnly && <td className={cn('num', columnClass('Disc %'))}><NumInput field="discount" value={line.discPct} disabled={readOnly} label="Discount percent" onChange={(v) => update(index, { discPct: Math.min(100, v) })} onKeyDown={moveOnEnter} /></td>}
                 {purchaseMode && showDiscount && !stockOnly && <td className={cn('num', columnClass('Disc Amt'))}>{line.name ? formatMoneyPlain(line.discAmt) : ''}</td>}
-                {purchaseMode && showMrp && !stockOnly && <td className={cn('num', columnClass('MRP'))}>{line.mrp ? formatMoneyPlain(line.mrp) : '—'}</td>}
-                {purchaseMode && !stockOnly && <><td className={cn('num', columnClass('Margin %'))}>{line.name ? `${marginPct}%` : ''}</td><td className={cn('num', columnClass('Sales'))}>{line.name ? formatMoneyPlain(saleRate) : ''}</td></>}
+                {purchaseMode && showMrp && !stockOnly && <td className={cn('num', columnClass('MRP'))}><NumInput field="mrp" value={line.mrp} disabled={readOnly} label="MRP" onChange={(v) => update(index, { mrp: v })} onKeyDown={moveOnEnter} /></td>}
+                {purchaseMode && !stockOnly && <><td className={cn('num', columnClass('Margin %'))}>{line.name ? `${marginPct}%` : ''}</td><td className={cn('num', columnClass('Sales'))}><NumInput field="salesRate" value={saleRate} disabled={readOnly || !line.name} label="Sale rate" onChange={(v) => update(index, { salesRate: v })} onKeyDown={moveOnEnter} /></td></>}
                 {!stockOnly && <td className={cn('num', columnClass('Amount'))}>{line.name ? formatMoneyPlain(line.amount) : ''}</td>}
                 {showTax && showTaxRate && !stockOnly && !purchaseMode && <td className={cn('num', columnClass('Tax %'))}>{line.gstRate}%</td>}
                 {showTax && !stockOnly && <td className={cn('num', columnClass('Taxation'))}>{formatMoneyPlain(line.taxAmt)}</td>}
                 {!stockOnly && <td className={cn('num font-semibold text-navy', columnClass('Tot Amt'))}>{formatMoneyPlain(line.total)}</td>}
                 {showProfit && !stockOnly && <td className={cn('num text-[#2e7d4f]', columnClass('Profit'))}>{line.name ? formatMoneyPlain(profit) : ''}</td>}
                 {showProfit && !stockOnly && <td className={cn('num text-[#2e7d4f]', columnClass('Profit %'))}>{line.name ? `${profitPct}%` : ''}</td>}
-                {purchaseMode && !stockOnly && <td className={cn('num', columnClass('Net Rate'))}>{line.name ? formatMoneyPlain(netRate) : ''}</td>}
+                {purchaseMode && showNetRate && !stockOnly && <td className={cn('num', columnClass('Net Rate'))}>{line.name ? formatMoneyPlain(netRate) : ''}</td>}
                 {!readOnly && (
                   <td className="text-center">
                     {line.name && (
@@ -297,7 +302,7 @@ export function ItemGrid({
               <td className={cn('num', columnClass('Amount'))}>{formatMoneyPlain(totals.amount)}</td>
               <td className={cn('num', columnClass('Taxation'))}>{formatMoneyPlain(totals.tax)}</td>
               <td className={cn('num', columnClass('Tot Amt'))}>{formatMoneyPlain(totals.total)}</td>
-              <td className={columnClass('Net Rate')} />
+              {showNetRate && <td className={columnClass('Net Rate')} />}
               {!readOnly && <td />}
             </tr> : <tr>
               <td colSpan={Math.max(1, qtyIndex)}>Total</td>
