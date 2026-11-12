@@ -15,6 +15,10 @@ export const NO_RECORDS: MasterRecord[] = [];
 interface DemoState {
   vouchers: Record<string, VoucherRow[]>;
   addVoucher: (kind: string, row: VoucherRow) => void;
+  upsertVoucher: (kind: string, row: VoucherRow) => void;
+  removeVoucher: (kind: string, id: string) => void;
+  itemStockUpdates: Record<string, number>;
+  updateItemStocks: (updates: Record<string, number>) => void;
   itemPriceUpdates: Record<string, Partial<Pick<Item, 'rate' | 'purchaseRate' | 'mrp'>>>;
   updateItemPrices: (updates: Record<string, Partial<Pick<Item, 'rate' | 'purchaseRate' | 'mrp'>>>) => void;
 
@@ -38,6 +42,22 @@ export const useDemoStore = create<DemoState>((set) => ({
   vouchers: {},
   addVoucher: (kind, row) =>
     set((s) => ({ vouchers: { ...s.vouchers, [kind]: [row, ...(s.vouchers[kind] ?? [])] } })),
+  upsertVoucher: (kind, row) =>
+    set((s) => {
+      const rows = s.vouchers[kind] ?? [];
+      const exists = rows.some((entry) => entry.id === row.id);
+      return {
+        vouchers: {
+          ...s.vouchers,
+          [kind]: exists ? rows.map((entry) => entry.id === row.id ? row : entry) : [row, ...rows],
+        },
+      };
+    }),
+  removeVoucher: (kind, id) =>
+    set((s) => ({ vouchers: { ...s.vouchers, [kind]: (s.vouchers[kind] ?? []).filter((row) => row.id !== id) } })),
+  itemStockUpdates: {},
+  updateItemStocks: (updates) =>
+    set((s) => ({ itemStockUpdates: { ...s.itemStockUpdates, ...updates } })),
   itemPriceUpdates: {},
   updateItemPrices: (updates) =>
     set((s) => ({

@@ -5,6 +5,13 @@ import { useAppStore } from '../store/appStore';
 import { LoginPage } from '../features/auth/LoginPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { VoucherForm } from '../features/entry/VoucherForm';
+import { CreditNoteCreate } from '../features/entry/CreditNoteCreate';
+import { CreditNoteDisplay } from '../features/entry/CreditNoteDisplay';
+import { DebitNoteDisplay } from '../features/entry/DebitNoteDisplay';
+import { StockJournalCreate } from '../features/entry/StockJournalCreate';
+import { StockJournalDisplay } from '../features/entry/StockJournalDisplay';
+import { StockCheckingCreate } from '../features/entry/StockCheckingCreate';
+import { StockCheckingDisplay } from '../features/entry/StockCheckingDisplay';
 import { VoucherDisplay } from '../features/entry/VoucherDisplay';
 import { PendingReport } from '../features/entry/PendingReport';
 import { PosBilling } from '../features/billing/PosBilling';
@@ -12,6 +19,7 @@ import { CounterClosing } from '../features/entry/CounterClosing';
 import { CardUpiSettlement } from '../features/entry/CardUpiSettlement';
 import { GodownTransfer } from '../features/entry/GodownTransfer';
 import { Production } from '../features/entry/Production';
+import { ProductionDisplay } from '../features/entry/ProductionDisplay';
 import { VoucherEntry } from '../features/entry/VoucherEntry';
 import { LedgerStatement } from '../features/entry/LedgerStatement';
 import { voucherConfigs, type VoucherKind } from '../features/entry/voucherConfig';
@@ -69,8 +77,8 @@ export function AppRoutes() {
         {/* Entry module */}
         {entryKinds.map(({ kind, slug }) => (
           <Route key={kind}>
-            <Route path={`/entry/${slug}/create`} element={<VoucherForm cfg={voucherConfigs[kind]} />} />
-            <Route path={`/entry/${slug}/display`} element={<VoucherDisplay kind={kind} />} />
+            <Route path={`/entry/${slug}/create`} element={kind === 'stock-journal' ? <StockJournalCreate /> : kind === 'stock-checking' ? <StockCheckingCreate /> : kind === 'credit-note' || kind === 'debit-note' ? <CreditNoteCreate key={kind} kind={kind} /> : <VoucherForm cfg={voucherConfigs[kind]} />} />
+            <Route path={`/entry/${slug}/display`} element={kind === 'stock-journal' ? <StockJournalDisplay /> : kind === 'stock-checking' ? <StockCheckingDisplay /> : kind === 'credit-note' ? <CreditNoteDisplay /> : kind === 'debit-note' ? <DebitNoteDisplay /> : <VoucherDisplay kind={kind} />} />
           </Route>
         ))}
         <Route path="/entry/sales/pos" element={<PosBilling />} />
@@ -81,7 +89,7 @@ export function AppRoutes() {
         <Route path="/entry/purchase-order/pending" element={<PendingReport kind="purchase-order" />} />
         <Route path="/entry/godown-transfer" element={<GodownTransfer />} />
         <Route path="/entry/production/create" element={<Production />} />
-        <Route path="/entry/production/display" element={<VoucherDisplay kind="production" />} />
+        <Route path="/entry/production/display" element={<ProductionDisplay />} />
         <Route path="/entry/voucher/create" element={<VoucherEntry />} />
         <Route path="/entry/voucher/display" element={<VoucherDisplay kind="voucher" />} />
         <Route path="/entry/voucher/ledger-statement" element={<LedgerStatement />} />

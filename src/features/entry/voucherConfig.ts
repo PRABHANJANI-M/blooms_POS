@@ -78,6 +78,7 @@ export const voucherConfigs: Record<VoucherKind, VoucherKindConfig> = {
   },
   'purchase-return': {
     ...base, kind: 'purchase-return', title: 'Purchase Return', prefix: 'PR', partyLabel: 'Supplier', partyKind: 'supplier',
+    showSundry: true, actions: ['quote', 'order', 'close-order'],
     displayPath: '/entry/purchase-return/display', label: 'Purchase return',
   },
   'stock-journal': {

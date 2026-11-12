@@ -115,6 +115,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
   const isQuotation = cfg.kind === 'quotation';
   const isSalesOrder = cfg.kind === 'sales-order';
   const isPurchaseOrder = cfg.kind === 'purchase-order';
+  const isPurchaseReturn = cfg.kind === 'purchase-return';
   const isDeliveryChallan = cfg.kind === 'delivery-challan';
   const isPurchaseBill = cfg.kind === 'purchase-bill';
   const isPurchaseGrid = isPurchaseBill || isPurchaseOrder;
@@ -252,7 +253,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
     addVoucher(cfg.kind, {
       id: `${cfg.kind}-${Date.now()}`, no: billNo, date: header.date, party: partyName,
       amount: cfg.stockOnly ? 0 : totals.netAmount, status: isSalesOrder || isPurchaseOrder ? 'Pending' : header.type === 'Credit' ? 'Credit' : 'Saved (demo)',
-      ...(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isPurchaseOrder || isDeliveryChallan || isPurchaseBill ? { lines: lines.filter((line) => line.name) } : {}),
+      ...(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isPurchaseOrder || isPurchaseReturn || isDeliveryChallan || isPurchaseBill ? { lines: lines.filter((line) => line.name) } : {}),
         ...(isPurchaseBill ? {
         extra: [
           supplierInvoiceNo.trim() && `Supplier invoice: ${supplierInvoiceNo.trim()}`,
@@ -291,6 +292,9 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
           header.cashDiscountDays > 0 && `CD days: ${header.cashDiscountDays}`,
           header.cashDiscountPct > 0 && `CD: ${header.cashDiscountPct}%`,
         ].filter(Boolean).join(' · '),
+      } : {}),
+      ...(isPurchaseReturn ? {
+        extra: sundryAmount > 0 ? `Bill sundry: ${sundry?.label ?? 'Other charges'} ${formatMoneyPlain(sundryAmount)}` : '',
       } : {}),
     } as VoucherRow);
     toast({
@@ -387,7 +391,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
       order: `An order copy was prepared from this ${cfg.label} (demo, not stored).`,
       'delivery-challan': 'A delivery challan copy was prepared from this sales bill (demo, not stored).',
       purchase: 'A purchase entry was opened for this sale (demo only).',
-      'close-order': 'Order marked as closed (demo, not stored).',
+      'close-order': `${cfg.title} marked as closed (demo, not stored).`,
       'from-orders': 'Pick pending sales orders in the pending report to load them here (demo).',
       'auto-order': 'Auto order would reorder items below reorder level. Demo only, nothing was ordered.',
       extend: 'Validity extended by 30 days (demo, not stored).',
@@ -770,7 +774,7 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                 <Row label="Taxable value" value={formatMoneyPlain(totals.taxable)} />
                 <Row label={interState ? 'IGST' : 'CGST'} value={formatMoneyPlain(interState ? totals.igst : totals.cgst)} />
                 {!interState && <Row label="SGST" value={formatMoneyPlain(totals.sgst)} />}
-                {cfg.showSundry && cfg.kind !== 'sales' && !isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan && !isPurchaseBill && !isPurchaseOrder ? (
+                {cfg.showSundry && cfg.kind !== 'sales' && !isSalesReturn && !isQuotation && !isSalesOrder && !isDeliveryChallan && !isPurchaseBill && !isPurchaseOrder && !isPurchaseReturn ? (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-600">Bill sundry</span>
                     <span className="flex items-center gap-2">
@@ -780,10 +784,10 @@ export function VoucherForm({ cfg }: { cfg: VoucherKindConfig }) {
                       <span className="w-20 text-right font-semibold tabular-nums">{formatMoneyPlain(sundryAmount)}</span>
                     </span>
                   </div>
-                ) : <Row label="Bill sundry" value={isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder ? formatMoneyPlain(sundryAmount) : '0.00'} />}
-                {(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder) && cfg.showSundry && (
+                ) : <Row label="Bill sundry" value={isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder || isPurchaseReturn ? formatMoneyPlain(sundryAmount) : '0.00'} />}
+                {(cfg.kind === 'sales' || isSalesReturn || isQuotation || isSalesOrder || isDeliveryChallan || isPurchaseBill || isPurchaseOrder || isPurchaseReturn) && cfg.showSundry && (
                   <section className="sales-after-tax rounded-lg border border-steel-200 bg-steel-100/70 p-3 sm:col-span-2">
-                    <h3 className="text-xs font-bold text-navy">{isSalesReturn || isQuotation || isSalesOrder || isPurchaseOrder || isDeliveryChallan || isPurchaseBill ? 'After tax (Bill Sundry)' : 'After-tax charges'}</h3>
+                    <h3 className="text-xs font-bold text-navy">{isSalesReturn || isQuotation || isSalesOrder || isPurchaseOrder || isDeliveryChallan || isPurchaseBill || isPurchaseReturn ? 'After tax (Bill Sundry)' : 'After-tax charges'}</h3>
                     <p className="mb-2 text-[.7rem] text-slate-600">Add a bill sundry by percentage or enter a fixed amount.</p>
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_8rem]">
                       <Field label="Bill sundry" htmlFor="sales-sundry">

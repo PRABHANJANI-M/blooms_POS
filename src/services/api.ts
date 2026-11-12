@@ -6,6 +6,7 @@ import { accountDefs } from '../mock-data/accounts';
 import { dashboardKpis, monthlySalesPurchase, topSellingProducts, recentActivities, dashboardTransactions } from '../mock-data/dashboard';
 import { backupHistory } from '../mock-data/company';
 import { isDemo } from './config';
+import { useDemoStore } from '../store/demoStore';
 
 /**
  * Service layer. Components call these functions only (never mock-data directly).
@@ -21,7 +22,10 @@ const notConnected = (what: string): Promise<never> =>
 export const api = {
   isDemo,
   getParties: (kind?: Party['kind']): Promise<Party[]> => delay(kind ? parties.filter((p) => p.kind === kind) : parties),
-  getItems: (): Promise<Item[]> => delay(items),
+  getItems: (): Promise<Item[]> => delay(items.map((item) => ({
+    ...item,
+    stock: useDemoStore.getState().itemStockUpdates[item.id] ?? item.stock,
+  }))),
   getDashboard: () => delay({ kpis: dashboardKpis, monthly: monthlySalesPurchase, topProducts: topSellingProducts, activities: recentActivities, transactions: dashboardTransactions }, 600),
   getReport: (slug: string): Promise<ReportDef> => {
     const def = reportDefs[slug];

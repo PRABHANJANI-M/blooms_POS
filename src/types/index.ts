@@ -22,6 +22,8 @@ export interface Item {
   name: string;
   category: string;
   brand: string;
+  model?: string;
+  rack?: string;
   unit: string;
   hsn: string;
   rate: number;
@@ -82,12 +84,89 @@ export interface VoucherRow {
   no: string;
   date: string;
   party: string;
+  series?: string;
   amount: number;
   status: string;
+  cancelled?: boolean;
+  deleted?: boolean;
   mode?: PayMode;
   paid?: number;
   lines?: BillLine[];
+  stockJournalLines?: StockJournalLine[];
+  stockCheckingLines?: StockCheckingLine[];
+  productionFinishedLines?: ProductionFinishedLine[];
+  productionRawLines?: ProductionRawLine[];
+  productionExpenses?: ProductionExpense[];
+  creditNoteLines?: CreditNoteLine[];
+  debitNoteLines?: CreditNoteLine[];
+  voucherEntries?: VoucherEntryLine[];
   extra?: string;
+}
+
+export interface VoucherEntryLine {
+  uid: string;
+  side: 'Dr' | 'Cr';
+  account: string;
+  debit: number;
+  credit: number;
+  remarks?: string;
+}
+
+export interface StockJournalLine {
+  uid: string;
+  itemId?: ID;
+  code: string;
+  name: string;
+  unit: string;
+  currentStock: number;
+  addQty: number;
+  lessQty: number;
+  rate: number;
+  detail: string;
+}
+
+export interface StockCheckingLine {
+  uid: string;
+  itemId?: ID;
+  code: string;
+  name: string;
+  unit: string;
+  systemQty: number;
+  countedQty?: number;
+  rate: number;
+}
+
+export interface ProductionFinishedLine {
+  uid: string;
+  itemId: ID;
+  name: string;
+  unit: string;
+  qty: number;
+  costPct: number;
+}
+
+export interface ProductionRawLine {
+  uid: string;
+  itemId: ID;
+  name: string;
+  unit: string;
+  qty: number;
+  rate: number;
+}
+
+export interface ProductionExpense {
+  uid: string;
+  label: string;
+  type: 'Amt' | '%';
+  value: number;
+}
+
+export interface CreditNoteLine {
+  uid: string;
+  account: string;
+  detail: string;
+  amount: number;
+  gstRate: number;
 }
 
 export interface MasterRecord {

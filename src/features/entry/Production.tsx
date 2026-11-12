@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, Save, ListChecks, X } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
@@ -6,7 +7,7 @@ import { Field, SelectInput, TextInput } from '../../components/ui/Field';
 import { Panel } from '../../components/ui/Panel';
 import { DemoNotice } from '../../components/ui/DemoNotice';
 import { useAppStore } from '../../store/appStore';
-import { useDemoStore } from '../../store/demoStore';
+import { NO_ROWS, useDemoStore } from '../../store/demoStore';
 import { items } from '../../mock-data/items';
 import { formatINR, formatMoneyPlain, formatQty, parseNum, round2 } from '../../utils/money';
 import { todayISO } from '../../utils/date';
@@ -19,9 +20,13 @@ const blank = (): { f: Finished; r: Raw } => ({ f: { id: Date.now(), itemId: '',
 
 /** Production (manufacturing) entry: finished goods, raw materials, expenses and cost summary. Mirrors the video layout. */
 export function Production() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const toast = useAppStore((s) => s.toast);
-  const addVoucher = useDemoStore((s) => s.addVoucher);
+  const savedRows = useDemoStore((s) => s.vouchers.production ?? NO_ROWS);
+  const upsertVoucher = useDemoStore((s) => s.upsertVoucher);
   const [prodNo, setProdNo] = useState(1);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [narration, setNarration] = useState('');
   const [finished, setFinished] = useState<Finished[]>([{ id: 1, itemId: '', qty: 0, costPct: 0 }]);
@@ -40,14 +45,76 @@ export function Production() {
 
   const itemName = (id: string) => items.find((i) => i.id === id);
 
+  useEffect(() => {
+    const productionId = (location.state as { productionId?: string } | null)?.productionId;
+    if (!productionId) return;
+    const record = savedRows.find((row) => row.id === productionId);
+    if (record) {
+      const number = Number(record.no.replace(/\D/g, '')) || 1;
+      setActiveId(record.id);
+      setProdNo(number);
+      setDate(record.date);
+      setNarration(record.extra ?? '');
+      setFinished((record.productionFinishedLines ?? []).map((line, index) => ({
+        id: index + 1,
+        itemId: line.itemId,
+        qty: line.qty,
+        costPct: line.costPct,
+      })));
+      setRaws((record.productionRawLines ?? []).map((line, index) => ({
+        id: index + 1,
+        itemId: line.itemId,
+        qty: line.qty,
+        rate: line.rate,
+      })));
+      setExpenses((record.productionExpenses ?? []).map((expense, index) => ({
+        id: index + 1,
+        label: expense.label,
+        type: expense.type,
+        value: expense.value,
+      })));
+    }
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate, savedRows]);
+
+  const newProduction = () => {
+    const nextNo = Math.max(0, ...savedRows.map((row) => Number(row.no.replace(/\D/g, '')) || 0)) + 1;
+    const b = blank();
+    setActiveId(null);
+    setProdNo(nextNo);
+    setDate(todayISO());
+    setFinished([b.f]);
+    setRaws([b.r]);
+    setExpenses([{ id: Date.now() + 2, label: 'LABOUR', type: 'Amt', value: 0 }, { id: Date.now() + 3, label: '', type: 'Amt', value: 0 }]);
+    setNarration('');
+  };
+
   const save = () => {
     if (!finished.some((f) => f.itemId && f.qty > 0)) return toast({ tone: 'error', title: 'Add a finished item with quantity' });
     if (!raws.some((r) => r.itemId && r.qty > 0)) return toast({ tone: 'error', title: 'Add at least one raw material' });
-    addVoucher('production', { id: `pr-${Date.now()}`, no: `PRD-${prodNo}`, date, party: 'Production', amount: totalCost, status: 'Saved (demo)' });
-    setProdNo((n) => n + 1);
+    const id = activeId ?? `production-${Date.now()}`;
+    upsertVoucher('production', {
+      id,
+      no: `PRD-${prodNo}`,
+      date,
+      party: 'Production',
+      amount: totalCost,
+      status: 'Saved (demo)',
+      extra: narration.trim(),
+      productionFinishedLines: finished.filter((line) => line.itemId && line.qty > 0).map((line) => {
+        const item = itemName(line.itemId);
+        return { uid: String(line.id), itemId: line.itemId, name: item?.name ?? '', unit: item?.unit ?? '', qty: line.qty, costPct: line.costPct };
+      }),
+      productionRawLines: raws.filter((line) => line.itemId && line.qty > 0).map((line) => {
+        const item = itemName(line.itemId);
+        return { uid: String(line.id), itemId: line.itemId, name: item?.name ?? '', unit: item?.unit ?? '', qty: line.qty, rate: line.rate };
+      }),
+      productionExpenses: expenses.filter((line) => line.label.trim() && line.value > 0).map((line) => ({
+        uid: String(line.id), label: line.label, type: line.type, value: line.value,
+      })),
+    });
+    setActiveId(id);
     toast({ tone: 'success', title: `Production PRD-${prodNo} saved (demo)`, message: `Cost ${formatINR(totalCost)}. Stock is not changed in a real ledger.` });
-    const b = blank();
-    setFinished([b.f]); setRaws([b.r]); setNarration('');
   };
 
   return (
@@ -156,8 +223,8 @@ export function Production() {
         <div className="no-print flex flex-wrap gap-2 rounded-xl border border-[#e3d6bd] bg-white p-2.5 shadow-panel">
           <Button variant="outline" icon={<ChevronLeft className="h-4 w-4" />} onClick={() => setProdNo((n) => Math.max(1, n - 1))}>Prev</Button>
           <Button variant="outline" icon={<ChevronRight className="h-4 w-4" />} onClick={() => setProdNo((n) => n + 1)}>Next</Button>
-          <Button variant="steel" icon={<Plus className="h-4 w-4" />} onClick={() => { const b = blank(); setFinished([b.f]); setRaws([b.r]); setNarration(''); }}>New (Alt+N)</Button>
-          <Button variant="outline" icon={<ListChecks className="h-4 w-4" />} onClick={() => toast({ tone: 'info', title: 'Display', message: 'Open Entry → Production → Display for the register.' })}>Display</Button>
+          <Button variant="steel" icon={<Plus className="h-4 w-4" />} onClick={newProduction}>New (Alt+N)</Button>
+          <Button variant="outline" icon={<ListChecks className="h-4 w-4" />} onClick={() => navigate('/entry/production/display')}>Display</Button>
           <Button variant="ghost" icon={<X className="h-4 w-4" />} onClick={() => window.history.back()}>Close (Esc)</Button>
           <Button variant="primary" className="ml-auto" size="lg" icon={<Save className="h-4 w-4" />} onClick={save}>Save (F10)</Button>
         </div>

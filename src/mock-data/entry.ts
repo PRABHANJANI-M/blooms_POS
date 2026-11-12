@@ -42,8 +42,22 @@ export const voucherHistory: Record<string, VoucherRow[]> = {
   'credit-note': [{ id: 'cn1', no: 'CN-9', date: '2026-11-02', party: 'Anand Stores', amount: 480, status: 'Adjusted' }],
   'debit-note': [{ id: 'dn1', no: 'DN-4', date: '2026-10-29', party: 'Coastal Brands Pvt Ltd', amount: 1200, status: 'Adjusted' }],
   voucher: [
-    { id: 'v1', no: 'RCPT-101', date: '2026-11-03', party: 'Anand Stores', amount: 1500, status: 'Receipt' },
-    { id: 'v2', no: 'PMT-57', date: '2026-11-03', party: 'Bharat Wholesale Agencies', amount: 5000, status: 'Payment' },
+    {
+      id: 'v1', no: 'RCPT-101', date: '2026-11-03', party: 'Anand Stores', amount: 1500, status: 'Receipt', series: 'Receipt',
+      extra: 'GST Nature: -- None -- · Narration: Amount received from Anand Stores',
+      voucherEntries: [
+        { uid: 'v1-1', side: 'Cr', account: 'Anand Stores', debit: 0, credit: 1500 },
+        { uid: 'v1-2', side: 'Dr', account: 'Cash', debit: 1500, credit: 0 },
+      ],
+    },
+    {
+      id: 'v2', no: 'PMT-57', date: '2026-11-03', party: 'Bharat Wholesale Agencies', amount: 5000, status: 'Payment', series: 'Payment',
+      extra: 'GST Nature: -- None -- · Narration: Payment to Bharat Wholesale Agencies',
+      voucherEntries: [
+        { uid: 'v2-1', side: 'Dr', account: 'Bharat Wholesale Agencies', debit: 5000, credit: 0 },
+        { uid: 'v2-2', side: 'Cr', account: 'Cash', debit: 0, credit: 5000 },
+      ],
+    },
   ],
   'sales-bill': [],
 };

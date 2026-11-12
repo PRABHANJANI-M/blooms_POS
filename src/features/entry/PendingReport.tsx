@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Play, Eraser, X } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
+import { DateRange } from '../../components/common/DateRange';
 import { Button } from '../../components/ui/Button';
 import { Field, SelectInput, TextInput } from '../../components/ui/Field';
 import { Panel } from '../../components/ui/Panel';
@@ -76,7 +77,12 @@ export function PendingReport({ kind }: { kind: VoucherKind }) {
 
   return (
     <>
-      <PageHeader variant="bill" title={`${cfg.title} Pending`} shortcuts="Enter = next box · Alt+L = load · Esc = dashboard" />
+      <PageHeader
+        variant="bill"
+        title={`${cfg.title} Pending`}
+        shortcuts="Enter = next box · Alt+L = load · Esc = dashboard"
+        actions={<DateRange from={from} to={to} onChange={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }} />}
+      />
       <div className="mt-3 space-y-3">
         <DemoNotice />
         <Panel bodyClassName="p-4">
@@ -94,8 +100,6 @@ export function PendingReport({ kind }: { kind: VoucherKind }) {
               <Field label={`${cfg.title} No`}>
                 <TextInput value={orderNo} placeholder="blank = all" onChange={(e) => setOrderNo(e.target.value)} />
               </Field>
-              <Field label="Date from" htmlFor="pf"><TextInput id="pf" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-              <Field label="Date to" htmlFor="pt"><TextInput id="pt" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
             </div>
             <div className="grid gap-3">
               <fieldset className="rounded-lg border border-cream-200 p-3">
